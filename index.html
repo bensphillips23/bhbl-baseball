@@ -37,6 +37,7 @@
             <label>Away P</label><select id="awayPitcher"></select>
             <button id="startGame" class="primary">Start</button>
             <button id="editLineup">Edit Lineups</button>
+            <button id="editPitchers">Edit Pitchers</button>
           </div>
 
           <div class="row">
@@ -62,7 +63,6 @@
           <div class="row">
             <div class="pill">Home P: <span id="curHomeP">-</span></div>
             <div class="pill">Away P: <span id="curAwayP">-</span></div>
-            <button id="editPitchers">Edit Pitchers</button>
           </div>
 
           <div class="row">
@@ -157,9 +157,9 @@
         </div>
         <div class="row">
           <label>Default SP</label><select id="defaultSP"></select>
-          <span class="small">Used when you start a game (can be changed in-game).</span>
         </div>
         <div id="pitcherList"></div>
+        <div class="hint">Default SP is pre-selected when you start a game. You can switch pitchers during a game.</div>
       </div>
 
       </div>
@@ -215,7 +215,7 @@
           <label>Team</label><select id="pitchTeam"></select>
         </div>
         <div class="tableWrap"><table id="pitchTable"></table></div>
-        <div class="hint">Note: v4 tracks runs/hits/walks/strikeouts/HR against the pitcher who is active when the event happens.</div>
+        <div class="hint">Pitchers do NOT change outcomes. v4.3 only tracks stats to the active pitcher.</div>
       </div>
     </section>
 
@@ -260,24 +260,18 @@
   <div class="modal" id="pitchModal" aria-hidden="true">
     <div class="modalCard">
       <div class="row" style="justify-content:space-between">
-        <h2 style="margin:0">Change Pitchers (This Game)</h2>
+        <h2 style="margin:0">Edit Pitchers (This Game)</h2>
         <button id="closePitchModal">Close</button>
       </div>
-      <div class="hint">Select a pitcher for each team. Pitchers do not affect outcomes yet; stats are tracked to the active pitcher.</div>
+      <div class="hint">Pick the active pitcher for each team. Pitchers do NOT affect outcomes.</div>
       <div class="grid2">
         <div class="card" style="background:#0b1229">
           <h3 class="h3" id="pitchAwayName">Away</h3>
-          <div class="row">
-            <label>Pitcher</label>
-            <select id="pitchAwaySelect"></select>
-          </div>
+          <div class="row"><label>Pitcher</label><select id="pitchAwaySelect"></select></div>
         </div>
         <div class="card" style="background:#0b1229">
           <h3 class="h3" id="pitchHomeName">Home</h3>
-          <div class="row">
-            <label>Pitcher</label>
-            <select id="pitchHomeSelect"></select>
-          </div>
+          <div class="row"><label>Pitcher</label><select id="pitchHomeSelect"></select></div>
         </div>
       </div>
       <div class="row" style="justify-content:flex-end">

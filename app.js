@@ -1,6 +1,8 @@
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
+let SIM_FAST = false;
+
 const BA_TIERS = [
   { key:"under_200", label:"Under .200" },
   { key:"200_219", label:".200–.219" },
@@ -315,6 +317,7 @@ function nextBatter(g){
   g.idx[side] = (g.idx[side] + 1) % g.lineup[side].length;
 }
 function addLog(g,msg){
+  if(SIM_FAST) return;
   const stamp = `${g.inning}${g.half==="top"?"▲":"▼"} (${g.outs} out)`;
   g.log.unshift(`[${stamp}] ${msg}`);
   if(g.log.length>250) g.log.length=250;
@@ -665,34 +668,62 @@ function wireTabs(){ document.querySelectorAll(".tab").forEach(btn=>btn.addEvent
 
 function doRoll(){
   if(!game) return;
-  if(game.outs>=3) endHalf(game);
+  // If the half is already over, end it and stop (prevents double-half bugs)
+  if(game.outs>=3){ endHalf(game); return; }
+
   const bid=batterId(game);
   const batter=getPlayer(bid);
   const roll=roll2d6();
   const code=CHARTS[batter.hr]?.[batter.tier]?.[roll.total];
   if(!code) { addLog(game, `Rolled ${roll.total} but chart missing for tier/hr.`); return; }
   apply(code, roll);
-  if(game.outs>=3) { addLog(game,"3 outs — half over."); endHalf(game); }
-  saveState();
-  renderPlay();
+
+  if(game.outs>=3) {
+    addLog(game,"3 outs — half over.");
+    endHalf(game);
+  }
+
+  if(!SIM_FAST){
+    saveState();
+    renderPlay();
+  }
 }
 function simHalf(){
   if(!game) return;
+  SIM_FAST = true;
   const startHalf=game.half, startIn=game.inning;
   let safety=0;
-  while(game.half===startHalf && game.inning===startIn && safety<200){ doRoll(); safety++; }
+  while(game.half===startHalf && game.inning===startIn && safety<400){
+    if(game.outs>=3){ endHalf(game); break; }
+    doRoll();
+    safety++;
+  }
+  SIM_FAST = false;
+  saveState();
+  renderPlay();
+  renderPitching();
+  renderStandings();
 }
 function simGame(){
   if(!game) return;
+  SIM_FAST = true;
   let safety=0;
-  while(game.inning<=9 && safety<5000){ doRoll(); safety++; }
+  while(game.inning<=9 && safety<9000){
+    if(game.outs>=3){ endHalf(game); safety++; continue; }
+    doRoll();
+    safety++;
+  }
+  SIM_FAST = false;
   addLog(game, "Simulation finished (through 9 innings).");
   saveState();
   renderPlay();
+  renderPitching();
+  renderStandings();
 }
 
 // Schedule sim: simple uses doRoll loop in a temp game
 function simulateScheduledGame(gameObj){
+  SIM_FAST = true;
   const g = newGame(gameObj.homeId, gameObj.awayId);
   let safety=0;
   while(g.inning<=9 && safety<5000){
@@ -717,6 +748,7 @@ function simulateScheduledGame(gameObj){
   gameObj.homeScore=g.score.home;
   gameObj.awayScore=g.score.away;
   gameObj.playedAt=new Date().toISOString();
+  SIM_FAST = false;
   saveState();
   return {homeScore:g.score.home, awayScore:g.score.away};
 }

@@ -24,8 +24,29 @@ button.danger{border-color:#ef4444}
 .score{padding:10px;border:1px solid #233055;border-radius:12px;background:#0b1229}
 .log{height:220px;overflow:auto;border:1px solid #233055;border-radius:12px;padding:10px;background:#0b1229;font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:pre-wrap}
 .hint{color:#94a3b8;font-size:12px;margin-top:10px}
+.small{color:#94a3b8;font-size:12px}
+.sep{border:0;border-top:1px solid #233055;margin:12px 0}
 .tableWrap{overflow:auto;border:1px solid #233055;border-radius:12px}
 table{width:100%;border-collapse:collapse;font-size:12px}
 th,td{border-bottom:1px solid #233055;padding:7px 9px;text-align:left;white-space:nowrap}
 th{background:#0b1229;position:sticky;top:0}
-.small{color:#94a3b8;font-size:12px}
+
+.lineupWrap{display:grid;grid-template-columns:1fr 240px;gap:12px;align-items:start}
+@media(max-width:900px){.lineupWrap{grid-template-columns:1fr}}
+.dndList{margin:0;padding:0;list-style:none;border:1px solid #233055;border-radius:12px;min-height:120px;background:#0b1229}
+.dndList li{padding:10px;border-bottom:1px solid #233055;display:flex;justify-content:space-between;gap:10px;cursor:grab}
+.dndList li:last-child{border-bottom:0}
+.dndList li.dragging{opacity:.5}
+.badge{font-size:11px;color:#cbd5e1;border:1px solid #233055;border-radius:999px;padding:2px 8px}
+
+.scheduleList{margin-top:10px;border:1px solid #233055;border-radius:12px;overflow:hidden}
+.schedRow{display:grid;grid-template-columns:140px 1fr 1fr 120px;gap:10px;padding:10px;border-bottom:1px solid #233055;background:#0b1229;cursor:pointer;align-items:center}
+.schedRow:last-child{border-bottom:0}
+.schedRow.selected{outline:2px solid #22c55e;outline-offset:-2px}
+.schedRow .meta{color:#94a3b8;font-size:12px}
+.schedRow .final{color:#dcfce7;font-weight:700}
+
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:16px}
+.modal.show{display:flex}
+.modalCard{width:min(1000px,100%);max-height:90vh;overflow:auto;background:#121a33;border:1px solid #233055;border-radius:16px;padding:12px}
+.h3{margin:6px 0 10px 0;font-size:14px}

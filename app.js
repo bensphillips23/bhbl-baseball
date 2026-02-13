@@ -1,5 +1,5 @@
-// BHBL Dice Baseball — Simple PWA build
-const STORAGE_KEY = "bhbl_pwa_simple_v1";
+// BHBL Dice Baseball — v2 (Lineups + Schedule)
+const STORAGE_KEY = "bhbl_pwa_v2";
 
 const BA_TIERS = [
   { key:"under_200", label:"Under .200" },
@@ -16,23 +16,21 @@ const CHARTS = {"lt20":{"under_200":{"2":"BB","3":"GO_L","4":"FO_H","5":"FO_1","
 const el = (id)=>document.getElementById(id);
 const uid = ()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36);
 
-function tierLabel(k) {
-  return (BA_TIERS.find(t=>t.key===k)||{label:k}).label;
-}
+function tierLabel(k) { return (BA_TIERS.find(t=>t.key===k)||{label:k}).label; }
 function hrLabel(k) { return k==="ge20" ? "20+ HR" : "< 20 HR"; }
 
 function defaultState(){
-  const mkTeam=(name)=>({id:uid(),name,roster:[]});
+  const mkTeam=(name)=>({id:uid(),name,roster:[], lineup:[]});
   const home=mkTeam("Home");
   const away=mkTeam("Away");
   for(let i=1;i<=9;i++) {
     home.roster.push({id:uid(),name:`Home Player ${i}`,pos:"NA",tier:"240_259",hr:"lt20"});
     away.roster.push({id:uid(),name:`Away Player ${i}`,pos:"NA",tier:"240_259",hr:"lt20"});
   }
-  return {
-    teams:[home,away],
-    season:{ batting:{} },
-  };
+  home.lineup = home.roster.slice(0,9).map(p=>p.id);
+  away.lineup = away.roster.slice(0,9).map(p=>p.id);
+
+  return { teams:[home,away], schedule:[], season:{ batting:{} } };
 }
 
 function loadState(){
@@ -41,10 +39,15 @@ function loadState(){
     if(!raw) return defaultState();
     const s = JSON.parse(raw);
     if(!s.teams) return defaultState();
+    for(const t of s.teams){
+      if(!t.roster) t.roster=[];
+      if(!t.lineup) t.lineup = t.roster.slice(0,9).map(p=>p.id);
+    }
+    if(!s.schedule) s.schedule=[];
+    if(!s.season) s.season={batting:{}};
+    if(!s.season.batting) s.season.batting={};
     return s;
-  } catch {
-    return defaultState();
-  }
+  } catch { return defaultState(); }
 }
 function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
@@ -59,9 +62,7 @@ function getPlayer(pid){
   return null;
 }
 function ensureBat(pid){
-  if(!state.season.batting[pid]) {
-    state.season.batting[pid] = { AB:0,H:0,HR:0,RBI:0,R:0,BB:0,SO:0,"2B":0,"3B":0 };
-  }
+  if(!state.season.batting[pid]) state.season.batting[pid] = { AB:0,H:0,HR:0,RBI:0,R:0,BB:0,SO:0,"2B":0,"3B":0 };
 }
 
 function fillTeamSelect(sel){
@@ -88,26 +89,130 @@ function roll2d6(){
   return {d1,d2,total:d1+d2};
 }
 
-// ---------------- Game (simple) ----------------
-let game = null;
-
-function buildLineup(team){
-  const roster = team.roster.slice();
-  const lineup = roster.slice(0, Math.min(9, roster.length)).map(p=>p.id);
-  while(lineup.length<9 && roster.length) lineup.push(roster[lineup.length % roster.length].id);
-  return lineup;
+// -------- Lineups --------
+function normalizedLineup(team){
+  const rosterIds = team.roster.map(p=>p.id);
+  const uniq = (arr)=>arr.filter((x,i)=>arr.indexOf(x)===i);
+  let line = uniq((team.lineup||[]).filter(id=>rosterIds.includes(id)));
+  for(const rid of rosterIds){
+    if(line.length>=9) break;
+    if(!line.includes(rid)) line.push(rid);
+  }
+  while(line.length<9 && rosterIds.length) line.push(rosterIds[line.length % rosterIds.length]);
+  return line.slice(0,9);
+}
+function setTeamLineup(team, lineup9, bench){
+  const rosterIds = team.roster.map(p=>p.id);
+  const clean = (arr)=>arr.filter(id=>rosterIds.includes(id));
+  const combined = [...clean(lineup9), ...clean(bench)];
+  const seen=new Set();
+  team.lineup = combined.filter(id=>{ if(seen.has(id)) return false; seen.add(id); return true; }).slice(0, Math.max(9, rosterIds.length));
 }
 
+// DnD helper
+function makeDndList(listEl){
+  let dragEl=null;
+  function onDragStart(e){
+    dragEl = e.currentTarget;
+    dragEl.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", dragEl.dataset.pid);
+  }
+  function onDragEnd(){
+    if(dragEl) dragEl.classList.remove("dragging");
+    dragEl=null;
+  }
+  function onDragOver(e){
+    e.preventDefault();
+    const after = getDragAfterElement(listEl, e.clientY);
+    const dragging = document.querySelector(".dragging");
+    if(!dragging) return;
+    if(after == null) listEl.appendChild(dragging);
+    else listEl.insertBefore(dragging, after);
+  }
+  listEl.addEventListener("dragover", onDragOver);
+  listEl.addEventListener("drop", (e)=>e.preventDefault());
+  listEl._attachItem = (li)=>{
+    li.draggable=true;
+    li.addEventListener("dragstart", onDragStart);
+    li.addEventListener("dragend", onDragEnd);
+  };
+}
+function getDragAfterElement(container, y){
+  const els = [...container.querySelectorAll("li:not(.dragging)")];
+  return els.reduce((closest, child)=>{
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height/2;
+    if(offset < 0 && offset > closest.offset) return { offset, element: child };
+    return closest;
+  }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+}
+function collectListIds(listEl){ return [...listEl.querySelectorAll("li")].map(li=>li.dataset.pid); }
+
+function renderLineupEditor(){
+  const team = getTeam(el("lineupTeam").value);
+  const lineupList = el("lineupList");
+  const benchList = el("benchList");
+  lineupList.innerHTML=""; benchList.innerHTML="";
+  if(!team) return;
+
+  const lineup9 = normalizedLineup(team);
+  const lineupSet = new Set(lineup9);
+  const bench = team.roster.map(p=>p.id).filter(id=>!lineupSet.has(id));
+
+  function mkItem(pid, idx){
+    const p = getPlayer(pid);
+    const li = document.createElement("li");
+    li.dataset.pid = pid;
+    li.innerHTML = `<span>${idx!=null? (idx+1)+". " : ""}<b>${p?.name ?? "?"}</b> <span class="small">(${p?.pos ?? "NA"})</span></span>
+                    <span class="badge">${tierLabel(p?.tier ?? "")} · ${hrLabel(p?.hr ?? "lt20")}</span>`;
+    return li;
+  }
+  lineup9.forEach((pid,i)=>{ const li=mkItem(pid,i); lineupList.appendChild(li); lineupList._attachItem(li); });
+  bench.forEach((pid)=>{ const li=mkItem(pid,null); benchList.appendChild(li); benchList._attachItem(li); });
+}
+
+// -------- Schedule --------
+let selectedGameId = null;
+function renderSchedule(){
+  const list = el("scheduleList");
+  list.innerHTML="";
+  const sched = state.schedule.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  if(!sched.length){
+    list.innerHTML = `<div class="hint" style="padding:10px">No games scheduled.</div>`;
+    selectedGameId=null;
+    return;
+  }
+  for(const g of sched){
+    const away = getTeam(g.awayId)?.name ?? "??";
+    const home = getTeam(g.homeId)?.name ?? "??";
+    const row = document.createElement("div");
+    row.className = "schedRow" + (g.id===selectedGameId ? " selected" : "");
+    const status = g.status==="final" ? `<span class="final">Final</span> ${g.awayScore}-${g.homeScore}` : `<span class="meta">Scheduled</span>`;
+    row.innerHTML = `<div>${g.date || ""}</div><div><b>${away}</b></div><div><b>${home}</b></div><div>${status}</div>`;
+    row.onclick = ()=>{ selectedGameId = g.id; renderSchedule(); };
+    list.appendChild(row);
+  }
+}
+function addScheduledGame(date, awayId, homeId){
+  state.schedule.push({ id: uid(), date, awayId, homeId, status:"scheduled", awayScore:0, homeScore:0, playedAt:null });
+  saveState();
+}
+
+// -------- Game Engine --------
+let game = null;
+
+function buildGameLineup(team){ return normalizedLineup(team); }
+
 function newGame(homeId, awayId){
+  const home=getTeam(homeId), away=getTeam(awayId);
   return {
     homeId, awayId,
-    inning:1,
-    half:"top", // away bats
-    outs:0,
+    inning:1, half:"top", outs:0,
     bases:[null,null,null],
     score:{home:0,away:0},
     idx:{home:0,away:0},
-    lineup:{home:buildLineup(getTeam(homeId)), away:buildLineup(getTeam(awayId))},
+    lineup:{home:buildGameLineup(home), away:buildGameLineup(away)},
     log:[]
   };
 }
@@ -117,14 +222,14 @@ function batterId(g){
   const arr = g.lineup[side];
   return arr[g.idx[side] % arr.length];
 }
-function nextBatter(g){ 
+function nextBatter(g){
   const side = battingSide(g);
-  g.idx[side] = (g.idx[side] + 1) % g.lineup[side].length; 
+  g.idx[side] = (g.idx[side] + 1) % g.lineup[side].length;
 }
 function addLog(g,msg){
   const stamp = `${g.inning}${g.half==="top"?"▲":"▼"} (${g.outs} out)`;
   g.log.unshift(`[${stamp}] ${msg}`);
-  if(g.log.length>200) g.log.length=200;
+  if(g.log.length>250) g.log.length=250;
 }
 function endHalf(g){
   g.outs=0; g.bases=[null,null,null];
@@ -148,7 +253,6 @@ function walkAdvance(g, bid){
   creditRun(b[2]); scoreRun(g,bid);
   g.bases[2]=b[1]; g.bases[1]=b[0]; g.bases[0]=bid;
 }
-
 function advanceAll(g, n, bid, batterBaseIndex){
   const old=g.bases.slice();
   const nb=[null,null,null];
@@ -162,7 +266,6 @@ function advanceAll(g, n, bid, batterBaseIndex){
   if(batterBaseIndex>=0) nb[batterBaseIndex]=bid;
   g.bases=nb;
 }
-
 function fcLeadOut(g, bid){
   const b=g.bases.slice();
   const lead = b[2]?2:(b[1]?1:(b[0]?0:-1));
@@ -184,43 +287,16 @@ function apply(code, roll){
   ensureBat(bid);
   const s=state.season.batting[bid];
 
-  if(code==="BB") {
-    s.BB += 1;
-    addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → WALK`);
-    walkAdvance(game, bid);
-    nextBatter(game);
-    return;
-  }
-  if(code==="K") {
-    s.AB += 1; s.SO += 1; game.outs += 1;
-    addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → STRIKEOUT`);
-    nextBatter(game);
-    return;
-  }
-  if(code.startsWith("FO")) {
-    s.AB += 1; game.outs += 1;
-    addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → FLY OUT`);
-    if(code==="FO_1") advanceAll(game, 1, null, -1);
-    nextBatter(game);
-    return;
-  }
+  if(code==="BB") { s.BB += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → WALK`); walkAdvance(game, bid); nextBatter(game); return; }
+  if(code==="K") { s.AB += 1; s.SO += 1; game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → STRIKEOUT`); nextBatter(game); return; }
+  if(code.startsWith("FO")) { s.AB += 1; game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → FLY OUT`); if(code==="FO_1") advanceAll(game, 1, null, -1); nextBatter(game); return; }
   if(code.startsWith("GO")) {
     s.AB += 1;
-    if(code==="GO_L") {
-      const d=fcLeadOut(game,bid);
-      addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → GROUNDBALL → ${d}`);
-      nextBatter(game);
-      return;
-    } else {
-      game.outs += 1;
-      addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → GROUNDBALL, batter out`);
-      if(code==="GO_B1") advanceAll(game, 1, null, -1);
-      nextBatter(game);
-      return;
-    }
+    if(code==="GO_L") { const d=fcLeadOut(game,bid); addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → GROUNDBALL → ${d}`); nextBatter(game); return; }
+    game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → GROUNDBALL, batter out`); if(code==="GO_B1") advanceAll(game, 1, null, -1); nextBatter(game); return;
   }
 
-  // Hits
+  // hits
   s.AB += 1;
   if(code==="HR") {
     s.H += 1; s.HR += 1;
@@ -234,29 +310,9 @@ function apply(code, roll){
     nextBatter(game);
     return;
   }
-  if(code==="3B") {
-    s.H += 1; s["3B"] += 1;
-    addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → TRIPLE`);
-    advanceAll(game, 3, bid, 2);
-    nextBatter(game);
-    return;
-  }
-  if(code.startsWith("2B")) {
-    s.H += 1; s["2B"] += 1;
-    addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → DOUBLE`);
-    const adv = (code==="2B3") ? 3 : 2;
-    advanceAll(game, adv, bid, 1);
-    nextBatter(game);
-    return;
-  }
-  if(code.startsWith("1B")) {
-    s.H += 1;
-    addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → SINGLE`);
-    const adv = (code==="1B2") ? 2 : 1;
-    advanceAll(game, adv, bid, 0);
-    nextBatter(game);
-    return;
-  }
+  if(code==="3B") { s.H += 1; s["3B"] += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → TRIPLE`); advanceAll(game, 3, bid, 2); nextBatter(game); return; }
+  if(code.startsWith("2B")) { s.H += 1; s["2B"] += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → DOUBLE`); const adv = (code==="2B3") ? 3 : 2; advanceAll(game, adv, bid, 1); nextBatter(game); return; }
+  if(code.startsWith("1B")) { s.H += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → SINGLE`); const adv = (code==="1B2") ? 2 : 1; advanceAll(game, adv, bid, 0); nextBatter(game); return; }
 }
 
 function renderTeamsAll(){
@@ -264,8 +320,10 @@ function renderTeamsAll(){
   fillTeamSelect(el("awayTeam"));
   fillTeamSelect(el("rosterTeam"));
   fillTeamSelect(el("statsTeam"));
+  fillTeamSelect(el("schedAway"));
+  fillTeamSelect(el("schedHome"));
+  fillTeamSelect(el("lineupTeam"));
 }
-
 function renderPlay(){
   if(!game){
     el("inning").textContent="-"; el("half").textContent="-"; el("outs").textContent="-";
@@ -305,18 +363,20 @@ function renderLeague(){
     del.onclick=()=>{
       if(!confirm(`Delete team "${t.name}"?`)) return;
       for(const p of t.roster) delete state.season.batting[p.id];
+      state.schedule = state.schedule.filter(g=>g.homeId!==t.id && g.awayId!==t.id);
       state.teams = state.teams.filter(x=>x.id!==t.id);
       saveState();
       renderTeamsAll();
       renderLeague();
+      renderSchedule();
       renderPlay();
     };
     row.appendChild(del);
     div.appendChild(row);
   }
   renderRoster();
+  renderLineupEditor();
 }
-
 function renderRoster(){
   const team=getTeam(el("rosterTeam").value);
   const div=el("rosterList");
@@ -325,16 +385,17 @@ function renderRoster(){
   for(const p of team.roster){
     const row=document.createElement("div");
     row.className="row";
-    row.innerHTML = `<div class="pill"><b>${p.name}</b> (${p.pos})</div>
-      <div class="small">${tierLabel(p.tier)} · ${hrLabel(p.hr)}</div>`;
+    row.innerHTML = `<div class="pill"><b>${p.name}</b> (${p.pos})</div><div class="small">${tierLabel(p.tier)} · ${hrLabel(p.hr)}</div>`;
     const del=document.createElement("button");
     del.className="danger"; del.textContent="Remove";
     del.onclick=()=>{
       if(!confirm(`Remove ${p.name}?`)) return;
       team.roster = team.roster.filter(x=>x.id!==p.id);
       delete state.season.batting[p.id];
+      team.lineup = (team.lineup||[]).filter(id=>id!==p.id);
       saveState();
       renderRoster();
+      renderLineupEditor();
       renderPlay();
     };
     row.appendChild(del);
@@ -343,7 +404,6 @@ function renderRoster(){
 }
 
 function battingAvg(s){ return s.AB ? (s.H/s.AB) : 0; }
-
 function renderStats(){
   const team=getTeam(el("statsTeam").value);
   const tbl=el("battingTable");
@@ -353,16 +413,11 @@ function renderStats(){
   const trh=document.createElement("tr");
   head.forEach(h=>{ const th=document.createElement("th"); th.textContent=h; trh.appendChild(th); });
   tbl.appendChild(trh);
-
   for(const p of team.roster){
     ensureBat(p.id);
     const s=state.season.batting[p.id];
     const tr=document.createElement("tr");
-    const vals=[
-      `${p.name} (${p.pos})`,
-      s.AB,s.H,s["2B"],s["3B"],s.HR,s.RBI,s.R,s.BB,s.SO,
-      battingAvg(s).toFixed(3).replace(/^0/,"")
-    ];
+    const vals=[`${p.name} (${p.pos})`,s.AB,s.H,s["2B"],s["3B"],s.HR,s.RBI,s.R,s.BB,s.SO,battingAvg(s).toFixed(3).replace(/^0/,"")];
     vals.forEach(v=>{ const td=document.createElement("td"); td.textContent=String(v); tr.appendChild(td); });
     tbl.appendChild(tr);
   }
@@ -376,7 +431,6 @@ function exportJSON(){
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
 }
-
 function importJSON(){
   const f=el("importFile").files?.[0];
   if(!f) return alert("Choose a JSON file first.");
@@ -388,28 +442,22 @@ function importJSON(){
       saveState();
       renderTeamsAll();
       renderLeague();
+      renderSchedule();
       renderStats();
       renderPlay();
       alert("Imported!");
-    } catch(e) {
-      alert("Import failed: "+e.message);
-    }
+    } catch(e) { alert("Import failed: "+e.message); }
   });
 }
 
-function wireTabs(){
-  document.querySelectorAll(".tab").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));
-      btn.classList.add("active");
-      const tab=btn.dataset.tab;
-      document.querySelectorAll(".panel").forEach(p=>p.classList.remove("active"));
-      el(tab).classList.add("active");
-      if(tab==="league") renderLeague();
-      if(tab==="stats") renderStats();
-    });
-  });
+function showTab(tab){
+  document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active", b.dataset.tab===tab));
+  document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("active", p.id===tab));
+  if(tab==="league") renderLeague();
+  if(tab==="schedule") renderSchedule();
+  if(tab==="stats") renderStats();
 }
+function wireTabs(){ document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click", ()=>showTab(btn.dataset.tab))); }
 
 function doRoll(){
   if(!game) return;
@@ -418,41 +466,101 @@ function doRoll(){
   const batter=getPlayer(bid);
   const roll=roll2d6();
   const code=CHARTS[batter.hr]?.[batter.tier]?.[roll.total];
-  if(!code) {
-    addLog(game, `Rolled ${roll.total} but chart missing for tier/hr.`);
-    return;
-  }
+  if(!code) { addLog(game, `Rolled ${roll.total} but chart missing for tier/hr.`); return; }
   apply(code, roll);
   if(game.outs>=3) { addLog(game,"3 outs — half over."); endHalf(game); }
   saveState();
   renderPlay();
 }
-
 function simHalf(){
   if(!game) return;
   const startHalf=game.half, startIn=game.inning;
   let safety=0;
-  while(game.half===startHalf && game.inning===startIn && safety<200){
-    doRoll();
-    safety++;
-  }
+  while(game.half===startHalf && game.inning===startIn && safety<200){ doRoll(); safety++; }
 }
 function simGame(){
   if(!game) return;
   let safety=0;
-  while(game.inning<=9 && safety<5000){
-    doRoll();
-    safety++;
-  }
+  while(game.inning<=9 && safety<5000){ doRoll(); safety++; }
   addLog(game, "Simulation finished (through 9 innings).");
   saveState();
   renderPlay();
+}
+
+// Schedule sim: simple uses doRoll loop in a temp game
+function simulateScheduledGame(gameObj){
+  const g = newGame(gameObj.homeId, gameObj.awayId);
+  let safety=0;
+  while(g.inning<=9 && safety<5000){
+    if(g.outs>=3){ endHalf(g); safety++; continue; }
+    const side = battingSide(g);
+    const bid = batterId(g);
+    const batter = getPlayer(bid);
+    const roll = roll2d6();
+    const code = CHARTS[batter.hr]?.[batter.tier]?.[roll.total];
+    if(!code){ safety++; continue; }
+
+    // temporarily swap global game for apply()
+    const oldGame = game;
+    game = g;
+    apply(code, roll);
+    game = oldGame;
+
+    if(g.outs>=3) endHalf(g);
+    safety++;
+  }
+  gameObj.status="final";
+  gameObj.homeScore=g.score.home;
+  gameObj.awayScore=g.score.away;
+  gameObj.playedAt=new Date().toISOString();
+  saveState();
+  return {homeScore:g.score.home, awayScore:g.score.away};
+}
+
+// Modal
+function openModal(){
+  if(!game) return alert("Start a game first.");
+  const modal = el("lineupModal");
+  modal.classList.add("show");
+  modal.setAttribute("aria-hidden","false");
+  el("modalAwayName").textContent = `Away: ${getTeam(game.awayId).name}`;
+  el("modalHomeName").textContent = `Home: ${getTeam(game.homeId).name}`;
+  renderModalLineups();
+}
+function closeModal(){
+  const modal = el("lineupModal");
+  modal.classList.remove("show");
+  modal.setAttribute("aria-hidden","true");
+}
+function renderModalLineups(){
+  const awayList=el("modalAwayList");
+  const homeList=el("modalHomeList");
+  awayList.innerHTML=""; homeList.innerHTML="";
+  const makeItem=(pid, idx)=>{
+    const p=getPlayer(pid);
+    const li=document.createElement("li");
+    li.dataset.pid=pid;
+    li.innerHTML = `<span>${idx+1}. <b>${p?.name ?? "?"}</b> <span class="small">(${p?.pos ?? "NA"})</span></span>
+                    <span class="badge">${tierLabel(p?.tier ?? "")} · ${hrLabel(p?.hr ?? "lt20")}</span>`;
+    return li;
+  };
+  game.lineup.away.forEach((pid,i)=>{ const li=makeItem(pid,i); awayList.appendChild(li); awayList._attachItem(li); });
+  game.lineup.home.forEach((pid,i)=>{ const li=makeItem(pid,i); homeList.appendChild(li); homeList._attachItem(li); });
+}
+
+// Init
+function initDnD(){
+  makeDndList(el("lineupList"));
+  makeDndList(el("benchList"));
+  makeDndList(el("modalAwayList"));
+  makeDndList(el("modalHomeList"));
 }
 
 function init(){
   wireTabs();
   renderTeamsAll();
   fillTierSelect(el("playerTier"));
+  initDnD();
   renderPlay();
 
   el("startGame").onclick=()=>{
@@ -468,10 +576,24 @@ function init(){
   el("simHalf").onclick=simHalf;
   el("simGame").onclick=simGame;
 
+  el("editLineup").onclick=openModal;
+  el("closeModal").onclick=closeModal;
+  el("modalSave").onclick=()=>{
+    const awayIds = collectListIds(el("modalAwayList")).slice(0,9);
+    const homeIds = collectListIds(el("modalHomeList")).slice(0,9);
+    if(awayIds.length===9) game.lineup.away = awayIds;
+    if(homeIds.length===9) game.lineup.home = homeIds;
+    closeModal();
+    renderPlay();
+  };
+
+  el("jumpSchedule").onclick=()=>showTab("schedule");
+  el("jumpLeague").onclick=()=>showTab("league");
+
   el("addTeam").onclick=()=>{
     const name=el("newTeam").value.trim();
     if(!name) return;
-    state.teams.push({id:uid(),name,roster:[]});
+    state.teams.push({id:uid(),name,roster:[], lineup:[]});
     el("newTeam").value="";
     saveState();
     renderTeamsAll();
@@ -488,26 +610,73 @@ function init(){
     const pos=el("playerPos").value.trim() || "NA";
     const tier=el("playerTier").value;
     const hr=el("playerHr").value;
-    team.roster.push({id:uid(),name,pos,tier,hr});
+    const pid=uid();
+    team.roster.push({id:pid,name,pos,tier,hr});
+    team.lineup = (team.lineup||[]).filter(Boolean);
+    if(team.lineup.length<9) team.lineup.push(pid);
     el("playerName").value=""; el("playerPos").value="";
     saveState();
     renderRoster();
+    renderLineupEditor();
   };
 
+  el("lineupTeam").onchange=renderLineupEditor;
+  el("saveLineup").onclick=()=>{
+    const team=getTeam(el("lineupTeam").value);
+    if(!team) return;
+    const lineupIds = collectListIds(el("lineupList")).slice(0,9);
+    const benchIds  = collectListIds(el("benchList"));
+    if(lineupIds.length<9) return alert("Lineup must have 9 players. Drag players from bench if needed.");
+    setTeamLineup(team, lineupIds, benchIds);
+    saveState();
+    alert("Saved!");
+    renderLineupEditor();
+  };
+
+  // schedule
+  el("addGame").onclick=()=>{
+    const date=el("gameDate").value;
+    const away=el("schedAway").value;
+    const home=el("schedHome").value;
+    if(!date) return alert("Pick a date.");
+    if(away===home) return alert("Pick two different teams.");
+    addScheduledGame(date, away, home);
+    renderSchedule();
+  };
+  el("simSelected").onclick=()=>{
+    const g = state.schedule.find(x=>x.id===selectedGameId);
+    if(!g) return alert("Click a game to select it.");
+    if(g.status==="final") return alert("That game is already final.");
+    const res=simulateScheduledGame(g);
+    alert(`Final: ${getTeam(g.awayId).name} ${res.awayScore} — ${getTeam(g.homeId).name} ${res.homeScore}`);
+    renderSchedule();
+    renderStats();
+  };
+  el("simAll").onclick=()=>{
+    let count=0;
+    for(const g of state.schedule){
+      if(g.status!=="final"){ simulateScheduledGame(g); count++; }
+    }
+    alert(`Simulated ${count} game(s).`);
+    renderSchedule();
+    renderStats();
+  };
+
+  // stats
   el("statsTeam").onchange=renderStats;
   el("resetStats").onclick=()=>{
-    if(!confirm("Reset ALL season stats?")) return;
+    if(!confirm("Reset ALL season stats AND mark scheduled games unplayed?")) return;
     state.season={batting:{}};
+    for(const g of state.schedule){ g.status="scheduled"; g.homeScore=0; g.awayScore=0; g.playedAt=null; }
     saveState();
     renderStats();
+    renderSchedule();
   };
 
   el("exportJson").onclick=exportJSON;
   el("importJson").onclick=importJSON;
 
-  if("serviceWorker" in navigator){
-    navigator.serviceWorker.register("sw.js").catch(()=>{});
-  }
+  if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
 }
 
 window.addEventListener("DOMContentLoaded", init);

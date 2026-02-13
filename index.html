@@ -12,11 +12,12 @@
   <header>
     <div>
       <h1>BHBL Dice Baseball</h1>
-      <div class="sub">Simple version — installable web app (PWA). Saves locally on your PC.</div>
+      <div class="sub">v2 — Lineups + Schedule. Installable (PWA). Saves locally on your PC.</div>
     </div>
     <nav class="tabs">
       <button class="tab active" data-tab="play">Play</button>
       <button class="tab" data-tab="league">League</button>
+      <button class="tab" data-tab="schedule">Schedule</button>
       <button class="tab" data-tab="stats">Stats</button>
       <button class="tab" data-tab="backup">Backup</button>
     </nav>
@@ -24,44 +25,58 @@
 
   <main>
     <section class="panel active" id="play">
-      <div class="card">
-        <h2>Game</h2>
-        <div class="row">
-          <label>Home</label><select id="homeTeam"></select>
-          <label>Away</label><select id="awayTeam"></select>
-          <button id="startGame" class="primary">Start</button>
+      <div class="grid2">
+        <div class="card">
+          <h2>Game</h2>
+          <div class="row">
+            <label>Home</label><select id="homeTeam"></select>
+            <label>Away</label><select id="awayTeam"></select>
+            <button id="startGame" class="primary">Start</button>
+            <button id="editLineup">Edit Lineups</button>
+          </div>
+
+          <div class="row">
+            <div class="pill">Inning: <span id="inning">-</span></div>
+            <div class="pill">Half: <span id="half">-</span></div>
+            <div class="pill">Outs: <span id="outs">-</span></div>
+          </div>
+
+          <div class="bases">
+            <div class="base" id="b1">1B</div>
+            <div class="base" id="b2">2B</div>
+            <div class="base" id="b3">3B</div>
+          </div>
+
+          <div class="score" id="score">Start a game.</div>
+
+          <div class="row">
+            <button id="roll" class="primary">Roll 2d6</button>
+            <button id="simHalf">Sim Half</button>
+            <button id="simGame">Sim Game</button>
+          </div>
+
+          <div class="row">
+            <div class="pill">Batter: <span id="batter">-</span></div>
+            <div class="pill">Tier: <span id="tier">-</span></div>
+            <div class="pill">HR: <span id="hr">-</span></div>
+          </div>
+
+          <pre class="log" id="log"></pre>
+
+          <div class="hint">
+            New: saved batting orders per team + in-game lineup edits. Next: pitching, box scores, season standings.
+          </div>
         </div>
 
-        <div class="row">
-          <div class="pill">Inning: <span id="inning">-</span></div>
-          <div class="pill">Half: <span id="half">-</span></div>
-          <div class="pill">Outs: <span id="outs">-</span></div>
-        </div>
-
-        <div class="bases">
-          <div class="base" id="b1">1B</div>
-          <div class="base" id="b2">2B</div>
-          <div class="base" id="b3">3B</div>
-        </div>
-
-        <div class="score" id="score">Start a game.</div>
-
-        <div class="row">
-          <button id="roll" class="primary">Roll 2d6</button>
-          <button id="simHalf">Sim Half</button>
-          <button id="simGame">Sim Game</button>
-        </div>
-
-        <div class="row">
-          <div class="pill">Batter: <span id="batter">-</span></div>
-          <div class="pill">Tier: <span id="tier">-</span></div>
-          <div class="pill">HR: <span id="hr">-</span></div>
-        </div>
-
-        <pre class="log" id="log"></pre>
-
-        <div class="hint">
-          This simple build uses your chart outcomes and basic runner advancement. Next upgrades: lineup editor, pitching, box scores.
+        <div class="card">
+          <h2>Quick Actions</h2>
+          <div class="hint">Schedule games, then simulate from the Schedule tab.</div>
+          <div class="row">
+            <button id="jumpSchedule">Go to Schedule</button>
+            <button id="jumpLeague">Go to League</button>
+          </div>
+          <hr class="sep"/>
+          <div class="hint"><b>Lineups:</b> League tab saves a default batting order per team. In-game edits affect only the current game.</div>
         </div>
       </div>
     </section>
@@ -99,7 +114,41 @@
           <div id="rosterList"></div>
         </div>
       </div>
-      <div class="hint">Lineup = roster order (first 9). We’ll add lineup editing next.</div>
+
+      <div class="card" style="margin-top:12px">
+        <h2>Batting Order (Drag to reorder)</h2>
+        <div class="row">
+          <label>Team</label><select id="lineupTeam"></select>
+          <button id="saveLineup" class="primary">Save Lineup</button>
+          <span class="small">Saved lineup is used when you start a new game.</span>
+        </div>
+        <div class="hint">Drag players to set the 1–9 batting order. If you have more than 9, the extra players are bench.</div>
+        <div class="lineupWrap">
+          <ol id="lineupList" class="dndList"></ol>
+          <div>
+            <div class="small" style="margin-bottom:6px">Bench (optional)</div>
+            <ul id="benchList" class="dndList"></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="schedule">
+      <div class="card">
+        <h2>Schedule</h2>
+        <div class="row">
+          <input id="gameDate" type="date"/>
+          <label>Away</label><select id="schedAway"></select>
+          <label>Home</label><select id="schedHome"></select>
+          <button id="addGame" class="primary">Add Game</button>
+        </div>
+        <div class="row">
+          <button id="simSelected" class="primary">Sim Selected Game</button>
+          <button id="simAll">Sim All Remaining</button>
+        </div>
+        <div class="hint">Tip: click a scheduled game to select it. Completed games are marked “Final”.</div>
+        <div id="scheduleList" class="scheduleList"></div>
+      </div>
     </section>
 
     <section class="panel" id="stats">
@@ -127,6 +176,29 @@
       </div>
     </section>
   </main>
+
+  <div class="modal" id="lineupModal" aria-hidden="true">
+    <div class="modalCard">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Edit Lineups (This Game)</h2>
+        <button id="closeModal">Close</button>
+      </div>
+      <div class="hint">Drag to reorder. This does not change saved lineups in League tab.</div>
+      <div class="grid2">
+        <div class="card" style="background:#0b1229">
+          <h3 class="h3" id="modalAwayName">Away</h3>
+          <ol id="modalAwayList" class="dndList"></ol>
+        </div>
+        <div class="card" style="background:#0b1229">
+          <h3 class="h3" id="modalHomeName">Home</h3>
+          <ol id="modalHomeList" class="dndList"></ol>
+        </div>
+      </div>
+      <div class="row" style="justify-content:flex-end">
+        <button id="modalSave" class="primary">Save Changes</button>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

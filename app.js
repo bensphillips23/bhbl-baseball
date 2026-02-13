@@ -721,6 +721,26 @@ function simulateScheduledGame(gameObj){
   return {homeScore:g.score.home, awayScore:g.score.away};
 }
 
+
+// -------- Pitcher Modal --------
+function openPitchModal(){
+  if(!game) return alert("Start a game first.");
+  el("pitchModal").classList.add("show");
+  el("pitchModal").setAttribute("aria-hidden","false");
+  el("pitchAwayName").textContent = `Away: ${getTeam(game.awayId).name}`;
+  el("pitchHomeName").textContent = `Home: ${getTeam(game.homeId).name}`;
+
+  fillPitcherSelect(el("pitchAwaySelect"), game.awayId);
+  fillPitcherSelect(el("pitchHomeSelect"), game.homeId);
+
+  el("pitchAwaySelect").value = game.pitcher.away || getTeam(game.awayId)?.defaultSPId || "";
+  el("pitchHomeSelect").value = game.pitcher.home || getTeam(game.homeId)?.defaultSPId || "";
+}
+function closePitchModal(){
+  el("pitchModal").classList.remove("show");
+  el("pitchModal").setAttribute("aria-hidden","true");
+}
+
 // Modal
 function openModal(){
   if(!game) return alert("Start a game first.");
@@ -787,6 +807,17 @@ function init(){
   el("simGame").onclick=simGame;
 
   el("editLineup").onclick=openModal;
+  if(el("editPitchers")) el("editPitchers").onclick=openPitchModal;
+  if(el("closePitchModal")) el("closePitchModal").onclick=closePitchModal;
+  if(el("pitchSave")) el("pitchSave").onclick=()=>{
+    if(!game) return;
+    game.pitcher.away = el("pitchAwaySelect").value || "";
+    game.pitcher.home = el("pitchHomeSelect").value || "";
+    addLog(game, `Pitchers set. Away: ${getPitcher(game.awayId, game.pitcher.away)?.name || "none"} | Home: ${getPitcher(game.homeId, game.pitcher.home)?.name || "none"}`);
+    closePitchModal();
+    saveState();
+    renderPlay();
+  };
   el("closeModal").onclick=closeModal;
   el("modalSave").onclick=()=>{
     const awayIds = collectListIds(el("modalAwayList")).slice(0,9);
@@ -796,23 +827,6 @@ function init(){
     closeModal();
     renderPlay();
   };
-
-
-  el("changeHomeP").onclick=()=>{
-    if(!game) return alert("Start a game first.");
-    const teamId=game.homeId;
-    const t=getTeam(teamId);
-    const opts=(t.pitchers||[]).map(p=>`${p.id}:${p.name} (${p.role})`).join("\n");
-    if(!opts) return alert("No pitchers on this team. Add them in League tab.");
-    const pid = prompt("Enter pitcher ID from list:\n"+opts, game.pitcher.home||"");
-    if(pid===null) return;
-    if(!(t.pitchers||[]).some(p=>p.id===pid)) return alert("Invalid pitcher ID.");
-    game.pitcher.home = pid;
-    addLog(game, `Home changed pitcher to ${getPitcher(teamId,pid).name}`);
-    saveState(); renderPlay();
-  };
-  el("changeAwayP").onclick=()=>{
-    if(!game) return alert("Start a game first.");
     const teamId=game.awayId;
     const t=getTeam(teamId);
     const opts=(t.pitchers||[]).map(p=>`${p.id}:${p.name} (${p.role})`).join("\n");

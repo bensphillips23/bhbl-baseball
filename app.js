@@ -318,9 +318,9 @@ function apply(code, roll){
   }
 
   // hits
-  s.AB += 1;
+  s.AB += 1; if(gs) gs.AB += 1;
   if(code==="HR") {
-    s.H += 1; if(gs) gs.H += 1; s.HR += 1; if(gs){ gs.H += 1; if(gs) gs.H += 1; gs.HR += 1; }
+    s.H += 1; s.HR += 1; if(gs){ gs.H += 1; gs.HR += 1; }
     addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → HOME RUN`);
     const runners=game.bases.slice();
     for(const r of runners) if(r) creditRun(r);
@@ -331,8 +331,8 @@ function apply(code, roll){
     nextBatter(game);
     return;
   }
-  if(code==="3B") { s.H += 1; if(gs) gs.H += 1; s["3B"] += 1; if(gs){ gs.H += 1; if(gs) gs.H += 1; gs["3B"] += 1; } addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → TRIPLE`); advanceAll(game, 3, bid, 2); nextBatter(game); return; }
-  if(code.startsWith("2B")) { s.H += 1; if(gs) gs.H += 1; s["2B"] += 1; if(gs){ gs.H += 1; if(gs) gs.H += 1; gs["2B"] += 1; } addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → DOUBLE`); const adv = (code==="2B3") ? 3 : 2; advanceAll(game, adv, bid, 1); nextBatter(game); return; }
+  if(code==="3B") { s.H += 1; s["3B"] += 1; if(gs){ gs.H += 1; gs["3B"] += 1; } addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → TRIPLE`); advanceAll(game, 3, bid, 2); nextBatter(game); return; }
+  if(code.startsWith("2B")) { s.H += 1; s["2B"] += 1; if(gs){ gs.H += 1; gs["2B"] += 1; } addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → DOUBLE`); const adv = (code==="2B3") ? 3 : 2; advanceAll(game, adv, bid, 1); nextBatter(game); return; }
   if(code.startsWith("1B")) { s.H += 1; if(gs) gs.H += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → SINGLE`); const adv = (code==="1B2") ? 2 : 1; advanceAll(game, adv, bid, 0); nextBatter(game); return; }
 }
 
@@ -756,10 +756,10 @@ function renderModalLineups(){
 function initDnD(){
   makeDndList(el("lineupList"));
   makeDndList(el("benchList"));
-  makeDndList(el("modalAwayLineup"));
-  makeDndList(el("modalAwayBench"));
-  makeDndList(el("modalHomeLineup"));
-  makeDndList(el("modalHomeBench"));
+  if(el("modalAwayLineup")) makeDndList(el("modalAwayLineup"));
+  if(el("modalAwayBench")) makeDndList(el("modalAwayBench"));
+  if(el("modalHomeLineup")) makeDndList(el("modalHomeLineup"));
+  if(el("modalHomeBench")) makeDndList(el("modalHomeBench"));
 }
 
 function init(){
@@ -847,8 +847,8 @@ function init(){
     addScheduledGame(away, home);
     renderSchedule();
   };
-  el("viewBox").onclick=openBoxScore;
-  el("closeBox").onclick=closeBoxScore;
+  if(el("viewBox")) el("viewBox").onclick=openBoxScore;
+  if(el("closeBox")) el("closeBox").onclick=closeBoxScore;
 
   el("simSelected").onclick=()=>{
     const g = state.schedule.find(x=>x.id===selectedGameId);

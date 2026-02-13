@@ -20,6 +20,7 @@
       <button class="tab" data-tab="schedule">Schedule</button>
       <button class="tab" data-tab="standings">Standings</button>
       <button class="tab" data-tab="stats">Stats</button>
+      <button class="tab" data-tab="pitching">Pitching</button>
       <button class="tab" data-tab="backup">Backup</button>
     </nav>
   </header>
@@ -32,6 +33,8 @@
           <div class="row">
             <label>Home</label><select id="homeTeam"></select>
             <label>Away</label><select id="awayTeam"></select>
+            <label>Home P</label><select id="homePitcher"></select>
+            <label>Away P</label><select id="awayPitcher"></select>
             <button id="startGame" class="primary">Start</button>
             <button id="editLineup">Edit Lineups</button>
           </div>
@@ -54,6 +57,13 @@
             <button id="roll" class="primary">Roll 2d6</button>
             <button id="simHalf">Sim Half</button>
             <button id="simGame">Sim Game</button>
+          </div>
+
+          <div class="row">
+            <div class="pill">Home P: <span id="curHomeP">-</span></div>
+            <div class="pill">Away P: <span id="curAwayP">-</span></div>
+            <button id="changeHomeP">Change Home P</button>
+            <button id="changeAwayP">Change Away P</button>
           </div>
 
           <div class="row">
@@ -131,6 +141,28 @@
             <ul id="benchList" class="dndList"></ul>
           </div>
         </div>
+      
+      <div class="card" style="margin-top:12px">
+        <h2>Pitchers</h2>
+        <div class="row">
+          <label>Team</label><select id="pitRosterTeam"></select>
+        </div>
+        <div class="row">
+          <input id="pitcherName" placeholder="Pitcher name" />
+          <label>Role</label>
+          <select id="pitcherRole">
+            <option value="SP">SP</option>
+            <option value="RP">RP</option>
+          </select>
+          <button id="addPitcher" class="primary">Add Pitcher</button>
+        </div>
+        <div class="row">
+          <label>Default SP</label><select id="defaultSP"></select>
+          <span class="small">Used when you start a game (can be changed in-game).</span>
+        </div>
+        <div id="pitcherList"></div>
+      </div>
+
       </div>
     </section>
 
@@ -175,6 +207,19 @@
         <div class="tableWrap"><table id="battingTable"></table></div>
       </div>
     </section>
+
+
+    <section class="panel" id="pitching">
+      <div class="card">
+        <h2>Season Pitching Stats</h2>
+        <div class="row">
+          <label>Team</label><select id="pitchTeam"></select>
+        </div>
+        <div class="tableWrap"><table id="pitchTable"></table></div>
+        <div class="hint">Note: v4 tracks runs/hits/walks/strikeouts/HR against the pitcher who is active when the event happens.</div>
+      </div>
+    </section>
+
 
     <section class="panel" id="backup">
       <div class="card">

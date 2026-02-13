@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BHBL Dice Baseball</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0b1020" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>BHBL Dice Baseball</h1>
+      <div class="sub">Simple version — installable web app (PWA). Saves locally on your PC.</div>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="play">Play</button>
+      <button class="tab" data-tab="league">League</button>
+      <button class="tab" data-tab="stats">Stats</button>
+      <button class="tab" data-tab="backup">Backup</button>
+    </nav>
+  </header>
+
+  <main>
+    <section class="panel active" id="play">
+      <div class="card">
+        <h2>Game</h2>
+        <div class="row">
+          <label>Home</label><select id="homeTeam"></select>
+          <label>Away</label><select id="awayTeam"></select>
+          <button id="startGame" class="primary">Start</button>
+        </div>
+
+        <div class="row">
+          <div class="pill">Inning: <span id="inning">-</span></div>
+          <div class="pill">Half: <span id="half">-</span></div>
+          <div class="pill">Outs: <span id="outs">-</span></div>
+        </div>
+
+        <div class="bases">
+          <div class="base" id="b1">1B</div>
+          <div class="base" id="b2">2B</div>
+          <div class="base" id="b3">3B</div>
+        </div>
+
+        <div class="score" id="score">Start a game.</div>
+
+        <div class="row">
+          <button id="roll" class="primary">Roll 2d6</button>
+          <button id="simHalf">Sim Half</button>
+          <button id="simGame">Sim Game</button>
+        </div>
+
+        <div class="row">
+          <div class="pill">Batter: <span id="batter">-</span></div>
+          <div class="pill">Tier: <span id="tier">-</span></div>
+          <div class="pill">HR: <span id="hr">-</span></div>
+        </div>
+
+        <pre class="log" id="log"></pre>
+
+        <div class="hint">
+          This simple build uses your chart outcomes and basic runner advancement. Next upgrades: lineup editor, pitching, box scores.
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="league">
+      <div class="grid2">
+        <div class="card">
+          <h2>Teams</h2>
+          <div class="row">
+            <input id="newTeam" placeholder="Team name" />
+            <button id="addTeam" class="primary">Add</button>
+          </div>
+          <div id="teamsList"></div>
+        </div>
+
+        <div class="card">
+          <h2>Players</h2>
+          <div class="row">
+            <label>Team</label><select id="rosterTeam"></select>
+          </div>
+          <div class="row">
+            <input id="playerName" placeholder="Player name" />
+            <input id="playerPos" placeholder="Pos (SS)" />
+          </div>
+          <div class="row">
+            <label>BA Tier</label>
+            <select id="playerTier"></select>
+            <label>HR</label>
+            <select id="playerHr">
+              <option value="lt20">&lt; 20 HR</option>
+              <option value="ge20">20+ HR</option>
+            </select>
+            <button id="addPlayer" class="primary">Add Player</button>
+          </div>
+          <div id="rosterList"></div>
+        </div>
+      </div>
+      <div class="hint">Lineup = roster order (first 9). We’ll add lineup editing next.</div>
+    </section>
+
+    <section class="panel" id="stats">
+      <div class="card">
+        <h2>Season Batting Stats</h2>
+        <div class="row">
+          <label>Team</label><select id="statsTeam"></select>
+          <button id="resetStats" class="danger">Reset Season</button>
+        </div>
+        <div class="tableWrap"><table id="battingTable"></table></div>
+      </div>
+    </section>
+
+    <section class="panel" id="backup">
+      <div class="card">
+        <h2>Backup</h2>
+        <div class="row">
+          <button id="exportJson" class="primary">Export JSON</button>
+          <input id="importFile" type="file" accept=".json" />
+          <button id="importJson">Import JSON</button>
+        </div>
+        <div class="hint">
+          Data saves locally on your PC automatically. Export is your “backup file.”
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

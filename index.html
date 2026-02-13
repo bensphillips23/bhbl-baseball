@@ -71,7 +71,7 @@
 
         <div class="card">
           <h2>Quick Actions</h2>
-          <div class="hint">Schedule games, then simulate from the Schedule tab.</div>
+          <div class="hint">Add games, then simulate from the Schedule tab.</div>
           <div class="row">
             <button id="jumpSchedule">Go to Schedule</button>
             <button id="jumpLeague">Go to League</button>
@@ -137,14 +137,13 @@
     <section class="panel" id="schedule">
       <div class="card">
         <h2>Schedule</h2>
-        <div class="row">
-          <input id="gameDate" type="date"/>
-          <label>Away</label><select id="schedAway"></select>
+        <div class="row">          <label>Away</label><select id="schedAway"></select>
           <label>Home</label><select id="schedHome"></select>
           <button id="addGame" class="primary">Add Game</button>
         </div>
         <div class="row">
           <button id="simSelected" class="primary">Sim Selected Game</button>
+          <button id="viewBox">View Box Score</button>
           <button id="simAll">Sim All Remaining</button>
         </div>
         <div class="hint">Tip: click a scheduled game to select it. Completed games are marked “Final”.</div>
@@ -201,18 +200,41 @@
       <div class="grid2">
         <div class="card" style="background:#0b1229">
           <h3 class="h3" id="modalAwayName">Away</h3>
-          <ol id="modalAwayList" class="dndList"></ol>
+          <div class="lineupWrap">
+            <ol id="modalAwayLineup" class="dndList"></ol>
+            <div>
+              <div class="small" style="margin-bottom:6px">Bench</div>
+              <ul id="modalAwayBench" class="dndList"></ul>
+            </div>
+          </div>
         </div>
         <div class="card" style="background:#0b1229">
           <h3 class="h3" id="modalHomeName">Home</h3>
-          <ol id="modalHomeList" class="dndList"></ol>
+          <div class="lineupWrap">
+            <ol id="modalHomeLineup" class="dndList"></ol>
+            <div>
+              <div class="small" style="margin-bottom:6px">Bench</div>
+              <ul id="modalHomeBench" class="dndList"></ul>
+            </div>
+          </div>
         </div>
       </div>
       <div class="row" style="justify-content:flex-end">
         <button id="modalSave" class="primary">Save Changes</button>
       </div>
     </div>
+  
+  <!-- Modal: Box Score -->
+  <div class="modal" id="boxModal" aria-hidden="true">
+    <div class="modalCard">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0" id="boxTitle">Box Score</h2>
+        <button id="closeBox">Close</button>
+      </div>
+      <div id="boxBody"></div>
+    </div>
   </div>
+
 
   <script src="app.js"></script>
 </body>

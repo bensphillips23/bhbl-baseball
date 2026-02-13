@@ -40,7 +40,7 @@ th{background:#0b1229;position:sticky;top:0}
 .badge{font-size:11px;color:#cbd5e1;border:1px solid #233055;border-radius:999px;padding:2px 8px}
 
 .scheduleList{margin-top:10px;border:1px solid #233055;border-radius:12px;overflow:hidden}
-.schedRow{display:grid;grid-template-columns:140px 1fr 1fr 120px;gap:10px;padding:10px;border-bottom:1px solid #233055;background:#0b1229;cursor:pointer;align-items:center}
+.schedRow{display:grid;grid-template-columns:110px 1fr 1fr 140px;gap:10px;padding:10px;border-bottom:1px solid #233055;background:#0b1229;cursor:pointer;align-items:center}
 .schedRow:last-child{border-bottom:0}
 .schedRow.selected{outline:2px solid #22c55e;outline-offset:-2px}
 .schedRow .meta{color:#94a3b8;font-size:12px}
@@ -53,3 +53,7 @@ th{background:#0b1229;position:sticky;top:0}
 
 /* Standings */
 tr.leader td{font-weight:700;color:#dcfce7}
+
+/* Box score */
+.linescore{display:grid;gap:10px;margin:10px 0}
+.linescore table{width:100%}

@@ -44,6 +44,15 @@ function loadState(){
       if(!t.lineup) t.lineup = t.roster.slice(0,9).map(p=>p.id);
     }
     if(!s.schedule) s.schedule=[];
+    // migrate schedule: add gameNo
+    let maxNo=0;
+    for(const g of s.schedule){
+      if(g.gameNo){ maxNo=Math.max(maxNo, Number(g.gameNo)||0); }
+    }
+    for(const g of s.schedule){
+      if(!g.gameNo){ maxNo+=1; g.gameNo=maxNo; }
+      if(g.box===undefined) g.box=null;
+    }
     if(!s.season) s.season={batting:{}};
     if(!s.season.batting) s.season.batting={};
     return s;
@@ -177,7 +186,7 @@ let selectedGameId = null;
 function renderSchedule(){
   const list = el("scheduleList");
   list.innerHTML="";
-  const sched = state.schedule.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const sched = state.schedule.slice().sort((a,b)=>(a.gameNo||0)-(b.gameNo||0));
   if(!sched.length){
     list.innerHTML = `<div class="hint" style="padding:10px">No games scheduled.</div>`;
     selectedGameId=null;
@@ -214,7 +223,9 @@ function newGame(homeId, awayId){
     score:{home:0,away:0},
     idx:{home:0,away:0},
     lineup:{home:buildGameLineup(home), away:buildGameLineup(away)},
-    log:[]
+    log:[],
+    linescore:{ home:Array(9).fill(0), away:Array(9).fill(0) },
+    gameBatting:{ home:{}, away:{} }
   };
 }
 function battingSide(g){ return g.half==="top" ? "away" : "home"; }
@@ -238,12 +249,15 @@ function endHalf(g){
   if(g.half==="top") g.inning += 1;
 }
 
-function creditRun(pid){ if(!pid) return; ensureBat(pid); state.season.batting[pid].R += 1; }
-function rbi(bid){ if(!bid) return; ensureBat(bid); state.season.batting[bid].RBI += 1; }
-function scoreRun(g, bid){
-  const side = battingSide(g);
-  g.score[side] += 1;
-  if(bid) rbi(bid);
+function creditRun(pid){
+  if(!pid) return;
+  ensureBat(pid);
+  state.season.batting[pid].R += 1;
+  if(game && game.gameBatting){
+    const side = battingSide(game);
+    if(!game.gameBatting[side][pid]) game.gameBatting[side][pid] = { AB:0,H:0,HR:0,RBI:0,R:0,BB:0,SO:0,"2B":0,"3B":0 };
+    game.gameBatting[side][pid].R += 1;
+  }
 }
 
 function walkAdvance(g, bid){
@@ -287,12 +301,18 @@ function apply(code, roll){
   const batter=getPlayer(bid);
   ensureBat(bid);
   const s=state.season.batting[bid];
+  let gs=null;
+  if(game && game.gameBatting){
+    const side = battingSide(game);
+    if(!game.gameBatting[side][bid]) game.gameBatting[side][bid] = { AB:0,H:0,HR:0,RBI:0,R:0,BB:0,SO:0,"2B":0,"3B":0 };
+    gs = game.gameBatting[side][bid];
+  }
 
-  if(code==="BB") { s.BB += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → WALK`); walkAdvance(game, bid); nextBatter(game); return; }
-  if(code==="K") { s.AB += 1; s.SO += 1; game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → STRIKEOUT`); nextBatter(game); return; }
-  if(code.startsWith("FO")) { s.AB += 1; game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → FLY OUT`); if(code==="FO_1") advanceAll(game, 1, null, -1); nextBatter(game); return; }
+  if(code==="BB") { s.BB += 1; if(gs) gs.BB += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → WALK`); walkAdvance(game, bid); nextBatter(game); return; }
+  if(code==="K") { s.AB += 1; s.SO += 1; if(gs){ gs.AB += 1; gs.SO += 1; } game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → STRIKEOUT`); nextBatter(game); return; }
+  if(code.startsWith("FO")) { s.AB += 1; if(gs) gs.AB += 1; game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → FLY OUT`); if(code==="FO_1") advanceAll(game, 1, null, -1); nextBatter(game); return; }
   if(code.startsWith("GO")) {
-    s.AB += 1;
+    s.AB += 1; if(gs) gs.AB += 1;
     if(code==="GO_L") { const d=fcLeadOut(game,bid); addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → GROUNDBALL → ${d}`); nextBatter(game); return; }
     game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → GROUNDBALL, batter out`); if(code==="GO_B1") advanceAll(game, 1, null, -1); nextBatter(game); return;
   }
@@ -300,7 +320,7 @@ function apply(code, roll){
   // hits
   s.AB += 1;
   if(code==="HR") {
-    s.H += 1; s.HR += 1;
+    s.H += 1; if(gs) gs.H += 1; s.HR += 1; if(gs){ gs.H += 1; if(gs) gs.H += 1; gs.HR += 1; }
     addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → HOME RUN`);
     const runners=game.bases.slice();
     for(const r of runners) if(r) creditRun(r);
@@ -311,9 +331,9 @@ function apply(code, roll){
     nextBatter(game);
     return;
   }
-  if(code==="3B") { s.H += 1; s["3B"] += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → TRIPLE`); advanceAll(game, 3, bid, 2); nextBatter(game); return; }
-  if(code.startsWith("2B")) { s.H += 1; s["2B"] += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → DOUBLE`); const adv = (code==="2B3") ? 3 : 2; advanceAll(game, adv, bid, 1); nextBatter(game); return; }
-  if(code.startsWith("1B")) { s.H += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → SINGLE`); const adv = (code==="1B2") ? 2 : 1; advanceAll(game, adv, bid, 0); nextBatter(game); return; }
+  if(code==="3B") { s.H += 1; if(gs) gs.H += 1; s["3B"] += 1; if(gs){ gs.H += 1; if(gs) gs.H += 1; gs["3B"] += 1; } addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → TRIPLE`); advanceAll(game, 3, bid, 2); nextBatter(game); return; }
+  if(code.startsWith("2B")) { s.H += 1; if(gs) gs.H += 1; s["2B"] += 1; if(gs){ gs.H += 1; if(gs) gs.H += 1; gs["2B"] += 1; } addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → DOUBLE`); const adv = (code==="2B3") ? 3 : 2; advanceAll(game, adv, bid, 1); nextBatter(game); return; }
+  if(code.startsWith("1B")) { s.H += 1; if(gs) gs.H += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → SINGLE`); const adv = (code==="1B2") ? 2 : 1; advanceAll(game, adv, bid, 0); nextBatter(game); return; }
 }
 
 function renderTeamsAll(){
@@ -555,9 +575,14 @@ function simGame(){
 // Schedule sim: simple uses doRoll loop in a temp game
 function simulateScheduledGame(gameObj){
   const g = newGame(gameObj.homeId, gameObj.awayId);
+  // box score containers
+  g.linescore = { home: Array(9).fill(0), away: Array(9).fill(0) };
+  g.gameBatting = { home: {}, away: {} };
+
   let safety=0;
   while(g.inning<=9 && safety<5000){
     if(g.outs>=3){ endHalf(g); safety++; continue; }
+
     const side = battingSide(g);
     const bid = batterId(g);
     const batter = getPlayer(bid);
@@ -574,12 +599,103 @@ function simulateScheduledGame(gameObj){
     if(g.outs>=3) endHalf(g);
     safety++;
   }
+
   gameObj.status="final";
   gameObj.homeScore=g.score.home;
   gameObj.awayScore=g.score.away;
   gameObj.playedAt=new Date().toISOString();
+
+  // store box score
+  gameObj.box = {
+    linescore: g.linescore,
+    batting: g.gameBatting,
+    final: { home: g.score.home, away: g.score.away }
+  };
+
   saveState();
   return {homeScore:g.score.home, awayScore:g.score.away};
+}
+
+
+
+// -------- Box Score Modal --------
+function openBoxScore(){
+  const g = state.schedule.find(x=>x.id===selectedGameId);
+  if(!g) return alert("Click a game to select it.");
+  if(g.status!=="final" || !g.box) return alert("That game has no box score yet (simulate it first).");
+  const awayName = getTeam(g.awayId)?.name ?? "Away";
+  const homeName = getTeam(g.homeId)?.name ?? "Home";
+  el("boxTitle").textContent = `Game ${g.gameNo}: ${awayName} @ ${homeName}`;
+  const body = el("boxBody");
+  body.innerHTML = "";
+
+  // Linescore
+  const ls = g.box.linescore || {away:[],home:[]};
+  const innings = Math.max(ls.away.length, ls.home.length, 9);
+  const mkTh = (t)=>{ const th=document.createElement("th"); th.textContent=t; return th; };
+  const table=document.createElement("table");
+  const trh=document.createElement("tr");
+  trh.appendChild(mkTh(""));
+  for(let i=1;i<=innings;i++) trh.appendChild(mkTh(String(i)));
+  trh.appendChild(mkTh("R"));
+  table.appendChild(trh);
+
+  function addRow(label, arr, total){
+    const tr=document.createElement("tr");
+    const td0=document.createElement("td"); td0.innerHTML = `<b>${label}</b>`; tr.appendChild(td0);
+    for(let i=0;i<innings;i++){
+      const td=document.createElement("td"); td.textContent=String(arr[i]||0); tr.appendChild(td);
+    }
+    const tdr=document.createElement("td"); tdr.innerHTML = `<b>${total}</b>`; tr.appendChild(tdr);
+    table.appendChild(tr);
+  }
+  addRow(awayName, ls.away||[], g.box.final?.away ?? g.awayScore);
+  addRow(homeName, ls.home||[], g.box.final?.home ?? g.homeScore);
+
+  const wrap=document.createElement("div");
+  wrap.className="tableWrap";
+  wrap.appendChild(table);
+  body.appendChild(document.createElement("div")).className="hint";
+  body.appendChild(wrap);
+
+  // Batting tables
+  const makeBatTable=(teamId, sideLabel)=>{
+    const team=getTeam(teamId);
+    const roster=team?.roster||[];
+    const statsMap = g.box.batting?.[sideLabel] || {};
+    const tbl=document.createElement("table");
+    const head=["Player","AB","H","2B","3B","HR","RBI","R","BB","SO"];
+    const trh=document.createElement("tr");
+    head.forEach(h=>{ const th=document.createElement("th"); th.textContent=h; trh.appendChild(th); });
+    tbl.appendChild(trh);
+
+    roster.forEach(p=>{
+      const s = statsMap[p.id] || {AB:0,H:0,"2B":0,"3B":0,HR:0,RBI:0,R:0,BB:0,SO:0};
+      const tr=document.createElement("tr");
+      const vals=[`${p.name} (${p.pos})`,s.AB,s.H,s["2B"],s["3B"],s.HR,s.RBI,s.R,s.BB,s.SO];
+      vals.forEach(v=>{ const td=document.createElement("td"); td.textContent=String(v); tr.appendChild(td); });
+      tbl.appendChild(tr);
+    });
+
+    const title=document.createElement("div");
+    title.className="hint";
+    title.innerHTML = `<b>${team?.name ?? ""} batting</b>`;
+    body.appendChild(title);
+    const w=document.createElement("div");
+    w.className="tableWrap";
+    w.appendChild(tbl);
+    body.appendChild(w);
+  };
+
+  makeBatTable(g.awayId, "away");
+  makeBatTable(g.homeId, "home");
+
+  el("boxModal").classList.add("show");
+  el("boxModal").setAttribute("aria-hidden","false");
+}
+function closeBoxScore(){
+  el("boxModal").classList.remove("show");
+  el("boxModal").setAttribute("aria-hidden","true");
 }
 
 // Modal
@@ -598,27 +714,52 @@ function closeModal(){
   modal.setAttribute("aria-hidden","true");
 }
 function renderModalLineups(){
-  const awayList=el("modalAwayList");
-  const homeList=el("modalHomeList");
-  awayList.innerHTML=""; homeList.innerHTML="";
+  const awayLine=el("modalAwayLineup");
+  const homeLine=el("modalHomeLineup");
+  const awayBench=el("modalAwayBench");
+  const homeBench=el("modalHomeBench");
+  awayLine.innerHTML=""; homeLine.innerHTML="";
+  awayBench.innerHTML=""; homeBench.innerHTML="";
+
   const makeItem=(pid, idx)=>{
     const p=getPlayer(pid);
     const li=document.createElement("li");
     li.dataset.pid=pid;
-    li.innerHTML = `<span>${idx+1}. <b>${p?.name ?? "?"}</b> <span class="small">(${p?.pos ?? "NA"})</span></span>
+    li.innerHTML = `<span>${idx!=null? (idx+1)+". " : ""}<b>${p?.name ?? "?"}</b> <span class="small">(${p?.pos ?? "NA"})</span></span>
                     <span class="badge">${tierLabel(p?.tier ?? "")} · ${hrLabel(p?.hr ?? "lt20")}</span>`;
     return li;
   };
-  game.lineup.away.forEach((pid,i)=>{ const li=makeItem(pid,i); awayList.appendChild(li); awayList._attachItem(li); });
-  game.lineup.home.forEach((pid,i)=>{ const li=makeItem(pid,i); homeList.appendChild(li); homeList._attachItem(li); });
+
+  // Away
+  const awayTeam=getTeam(game.awayId);
+  const awayRoster=awayTeam?.roster?.map(p=>p.id) ?? [];
+  const awayLine9 = (game.lineup.away||[]).slice(0,9);
+  const awaySet=new Set(awayLine9);
+  const awayBenchIds = awayRoster.filter(id=>!awaySet.has(id));
+  awayLine9.forEach((pid,i)=>{ const li=makeItem(pid,i); awayLine.appendChild(li); awayLine._attachItem(li); });
+  awayBenchIds.forEach(pid=>{ const li=makeItem(pid,null); awayBench.appendChild(li); awayBench._attachItem(li); });
+
+  // Home
+  const homeTeam=getTeam(game.homeId);
+  const homeRoster=homeTeam?.roster?.map(p=>p.id) ?? [];
+  const homeLine9 = (game.lineup.home||[]).slice(0,9);
+  const homeSet=new Set(homeLine9);
+  const homeBenchIds = homeRoster.filter(id=>!homeSet.has(id));
+  homeLine9.forEach((pid,i)=>{ const li=makeItem(pid,i); homeLine.appendChild(li); homeLine._attachItem(li); });
+  homeBenchIds.forEach(pid=>{ const li=makeItem(pid,null); homeBench.appendChild(li); homeBench._attachItem(li); });
+}
+
+
 }
 
 // Init
 function initDnD(){
   makeDndList(el("lineupList"));
   makeDndList(el("benchList"));
-  makeDndList(el("modalAwayList"));
-  makeDndList(el("modalHomeList"));
+  makeDndList(el("modalAwayLineup"));
+  makeDndList(el("modalAwayBench"));
+  makeDndList(el("modalHomeLineup"));
+  makeDndList(el("modalHomeBench"));
 }
 
 function init(){
@@ -644,10 +785,10 @@ function init(){
   el("editLineup").onclick=openModal;
   el("closeModal").onclick=closeModal;
   el("modalSave").onclick=()=>{
-    const awayIds = collectListIds(el("modalAwayList")).slice(0,9);
-    const homeIds = collectListIds(el("modalHomeList")).slice(0,9);
-    if(awayIds.length===9) game.lineup.away = awayIds;
-    if(homeIds.length===9) game.lineup.home = homeIds;
+    const awayIds = collectListIds(el("modalAwayLineup")).concat(collectListIds(el("modalAwayBench")));
+    const homeIds = collectListIds(el("modalHomeLineup")).concat(collectListIds(el("modalHomeBench")));
+    if(awayIds.length>=9) game.lineup.away = awayIds.slice(0,9);
+    if(homeIds.length>=9) game.lineup.home = homeIds.slice(0,9);
     closeModal();
     renderPlay();
   };
@@ -700,14 +841,15 @@ function init(){
 
   // schedule
   el("addGame").onclick=()=>{
-    const date=el("gameDate").value;
     const away=el("schedAway").value;
     const home=el("schedHome").value;
-    if(!date) return alert("Pick a date.");
     if(away===home) return alert("Pick two different teams.");
-    addScheduledGame(date, away, home);
+    addScheduledGame(away, home);
     renderSchedule();
   };
+  el("viewBox").onclick=openBoxScore;
+  el("closeBox").onclick=closeBoxScore;
+
   el("simSelected").onclick=()=>{
     const g = state.schedule.find(x=>x.id===selectedGameId);
     if(!g) return alert("Click a game to select it.");

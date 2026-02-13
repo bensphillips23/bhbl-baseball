@@ -190,7 +190,8 @@ function renderSchedule(){
     row.className = "schedRow" + (g.id===selectedGameId ? " selected" : "");
     const status = g.status==="final" ? `<span class="final">Final</span> ${g.awayScore}-${g.homeScore}` : `<span class="meta">Scheduled</span>`;
     row.innerHTML = `<div>${g.date || ""}</div><div><b>${away}</b></div><div><b>${home}</b></div><div>${status}</div>`;
-    row.onclick = ()=>{ selectedGameId = g.id; renderSchedule(); };
+    row.onclick = ()=>{ selectedGameId = g.id; renderSchedule();
+    renderStandings(); };
     list.appendChild(row);
   }
 }
@@ -370,6 +371,7 @@ function renderLeague(){
       renderLeague();
       renderSchedule();
       renderPlay();
+  renderStandings();
     };
     row.appendChild(del);
     div.appendChild(row);
@@ -404,6 +406,65 @@ function renderRoster(){
 }
 
 function battingAvg(s){ return s.AB ? (s.H/s.AB) : 0; }
+
+function computeStandings(){
+  // Returns array of {teamId, GP,W,L,RF,RA,RD,WPct}
+  const map = {};
+  for(const t of state.teams){
+    map[t.id] = { teamId:t.id, GP:0, W:0, L:0, RF:0, RA:0, RD:0, WPct:0 };
+  }
+  for(const g of state.schedule){
+    if(g.status!=="final") continue;
+    const away = map[g.awayId];
+    const home = map[g.homeId];
+    if(!away || !home) continue;
+    away.GP += 1; home.GP += 1;
+    away.RF += g.awayScore; away.RA += g.homeScore;
+    home.RF += g.homeScore; home.RA += g.awayScore;
+    if(g.awayScore > g.homeScore){ away.W += 1; home.L += 1; }
+    else if(g.homeScore > g.awayScore){ home.W += 1; away.L += 1; }
+    // ties not expected; ignore
+  }
+  const rows = Object.values(map);
+  for(const r of rows){
+    r.RD = r.RF - r.RA;
+    r.WPct = (r.GP ? (r.W / r.GP) : 0);
+  }
+  rows.sort((a,b)=>{
+    // sort by win pct, then wins, then RD, then RF
+    if(b.WPct!==a.WPct) return b.WPct - a.WPct;
+    if(b.W!==a.W) return b.W - a.W;
+    if(b.RD!==a.RD) return b.RD - a.RD;
+    return b.RF - a.RF;
+  });
+  return rows;
+}
+
+function renderStandings(){
+  const tbl = el("standingsTable");
+  if(!tbl) return;
+  tbl.innerHTML = "";
+  const head = ["Team","GP","W","L","Pct","RF","RA","RD"];
+  const trh=document.createElement("tr");
+  head.forEach(h=>{ const th=document.createElement("th"); th.textContent=h; trh.appendChild(th); });
+  tbl.appendChild(trh);
+
+  const rows = computeStandings();
+  rows.forEach((r,idx)=>{
+    const team = getTeam(r.teamId);
+    const tr=document.createElement("tr");
+    if(idx===0 && r.GP>0) tr.className="leader";
+    const vals=[
+      team?.name ?? "??",
+      r.GP, r.W, r.L,
+      r.WPct.toFixed(3).replace(/^0/,""),
+      r.RF, r.RA, r.RD
+    ];
+    vals.forEach(v=>{ const td=document.createElement("td"); td.textContent=String(v); tr.appendChild(td); });
+    tbl.appendChild(tr);
+  });
+}
+
 function renderStats(){
   const team=getTeam(el("statsTeam").value);
   const tbl=el("battingTable");
@@ -444,7 +505,10 @@ function importJSON(){
       renderLeague();
       renderSchedule();
       renderStats();
+    renderStandings();
+    renderStandings();
       renderPlay();
+      renderStandings();
       alert("Imported!");
     } catch(e) { alert("Import failed: "+e.message); }
   });
@@ -455,6 +519,7 @@ function showTab(tab){
   document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("active", p.id===tab));
   if(tab==="league") renderLeague();
   if(tab==="schedule") renderSchedule();
+  if(tab==="standings") renderStandings();
   if(tab==="stats") renderStats();
 }
 function wireTabs(){ document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click", ()=>showTab(btn.dataset.tab))); }
@@ -664,6 +729,7 @@ function init(){
 
   // stats
   el("statsTeam").onchange=renderStats;
+  if(el("recalcStandings")) el("recalcStandings").onclick=renderStandings;
   el("resetStats").onclick=()=>{
     if(!confirm("Reset ALL season stats AND mark scheduled games unplayed?")) return;
     state.season={batting:{}};

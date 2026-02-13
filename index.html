@@ -18,6 +18,7 @@
       <button class="tab active" data-tab="play">Play</button>
       <button class="tab" data-tab="league">League</button>
       <button class="tab" data-tab="schedule">Schedule</button>
+      <button class="tab" data-tab="standings">Standings</button>
       <button class="tab" data-tab="stats">Stats</button>
       <button class="tab" data-tab="backup">Backup</button>
     </nav>
@@ -150,6 +151,19 @@
         <div id="scheduleList" class="scheduleList"></div>
       </div>
     </section>
+
+
+    <section class="panel" id="standings">
+      <div class="card">
+        <h2>Standings</h2>
+        <div class="row">
+          <button id="recalcStandings" class="primary">Recalculate</button>
+          <span class="small">Standings update automatically when scheduled games are simulated.</span>
+        </div>
+        <div class="tableWrap"><table id="standingsTable"></table></div>
+      </div>
+    </section>
+
 
     <section class="panel" id="stats">
       <div class="card">

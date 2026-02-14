@@ -356,8 +356,6 @@ function renderSchedule(){
     const status = g.status==="final" ? `<span class="final">Final</span> ${g.awayScore}-${g.homeScore}` : `<span class="meta">Scheduled</span>`;
     row.innerHTML = `<div>Game ${g.gameNo ?? ""}</div><div><b>${away}</b></div><div><b>${home}</b></div><div>${status}</div>`;
     row.onclick = ()=>{ selectedGameId = g.id; renderSchedule();
-  if(el("genSchedule")) el("genSchedule").onclick=generateSchedule;
-  if(el("clearSchedule")) el("clearSchedule").onclick=clearScheduleAll;
     renderStandings(); };
     list.appendChild(row);
   }
@@ -1448,6 +1446,10 @@ el("simSelected").onclick=()=>{
   el("exportJson").onclick=exportJSON;
   el("importJson").onclick=importJSON;
 
+
+  // Schedule generator
+  if(el("genSchedule")) el("genSchedule").onclick=generateSchedule;
+  if(el("clearSchedule")) el("clearSchedule").onclick=clearScheduleAll;
   if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
 }
 

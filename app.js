@@ -288,11 +288,19 @@ function makeDndList(listEl){
     else listEl.insertBefore(dragging, after);
   }
   listEl.addEventListener("dragover", onDragOver);
-  listEl.addEventListener("drop", (e)=>e.preventDefault());
+  listEl.addEventListener("drop", (e)=>{
+    e.preventDefault();
+    const pid = e.dataTransfer.getData("text/plain");
+    const items = [...listEl.querySelectorAll("li")];
+    const idx = items.findIndex(x=>x.classList.contains("dragging"));
+    // fire callback after DOM order changed
+    if(listEl._onReorder) listEl._onReorder(pid, idx);
+  });
   listEl._attachItem = (li)=>{
     li.draggable=true;
     li.addEventListener("dragstart", onDragStart);
     li.addEventListener("dragend", onDragEnd);
+    li.addEventListener("click", ()=>{ if(listEl._onClickItem) listEl._onClickItem(li); });
   };
 }
 function getDragAfterElement(container, y){
@@ -1035,6 +1043,106 @@ function simulateScheduledGame(gameObj){
 }
 
 // Modal
+
+let modalPick = null; // {side:"home|away", kind:"bench|slot", pid, idx}
+
+function clearModalPick(){
+  modalPick = null;
+  document.querySelectorAll("#modalBenchAwayList li, #modalBenchHomeList li, #modalAwayList li, #modalHomeList li")
+    .forEach(li=>li.classList.remove("selected"));
+}
+
+function renderModalBenches(){
+  const awayBench=el("modalBenchAwayList");
+  const homeBench=el("modalBenchHomeList");
+  if(!awayBench || !homeBench || !game) return;
+
+  awayBench.innerHTML=""; homeBench.innerHTML="";
+  const awayTeam=getTeam(game.awayId);
+  const homeTeam=getTeam(game.homeId);
+
+  const awayBenchIds=(awayTeam?.roster||[]).map(p=>p.id).filter(pid=>!game.lineup.away.includes(pid));
+  const homeBenchIds=(homeTeam?.roster||[]).map(p=>p.id).filter(pid=>!game.lineup.home.includes(pid));
+
+  const makeItem=(pid)=>{
+    const p=getPlayer(pid);
+    const li=document.createElement("li");
+    li.dataset.pid=pid;
+    li.className="listItem";
+    li.innerHTML = `<span><b>${p?.name ?? "?"}</b> <span class="small">(${p?.pos ?? "NA"})</span></span>
+                    <span class="badge">${tierLabel(p?.tier ?? "")} · ${hrLabel(p?.hr ?? "lt20")}</span>`;
+    return li;
+  };
+
+  awayBenchIds.forEach(pid=>{ const li=makeItem(pid); awayBench.appendChild(li); awayBench._attachItem(li); });
+  homeBenchIds.forEach(pid=>{ const li=makeItem(pid); homeBench.appendChild(li); homeBench._attachItem(li); });
+
+  // click selection handlers
+  awayBench._onClickItem = (li)=>{ clearModalPick(); modalPick={side:"away", kind:"bench", pid:li.dataset.pid, idx:null}; li.classList.add("selected"); };
+  homeBench._onClickItem = (li)=>{ clearModalPick(); modalPick={side:"home", kind:"bench", pid:li.dataset.pid, idx:null}; li.classList.add("selected"); };
+
+  const awayList=el("modalAwayList");
+  const homeList=el("modalHomeList");
+
+  const slotClick = (side, li, idx)=>{
+    const pid = li.dataset.pid;
+    if(!modalPick){
+      clearModalPick();
+      modalPick={side, kind:"slot", pid, idx};
+      li.classList.add("selected");
+      return;
+    }
+    if(modalPick.side!==side){
+      clearModalPick();
+      modalPick={side, kind:"slot", pid, idx};
+      li.classList.add("selected");
+      return;
+    }
+    if(modalPick.kind==="bench"){
+      const benchPid = modalPick.pid;
+      const oldPid = game.lineup[side][idx];
+      game.lineup[side][idx] = benchPid;
+      addLog(game, `${side==="home"?"Home":"Away"} sub: ${getPlayer(benchPid)?.name||"?"} for ${getPlayer(oldPid)?.name||"?"} (slot ${idx+1})`);
+      saveState();
+      clearModalPick();
+      renderModalLineups();
+  renderModalBenches();
+      renderModalBenches();
+      renderPlay();
+      return;
+    }
+    if(modalPick.kind==="slot"){
+      const a=modalPick.idx, b=idx;
+      const tmp=game.lineup[side][a];
+      game.lineup[side][a]=game.lineup[side][b];
+      game.lineup[side][b]=tmp;
+      addLog(game, `${side==="home"?"Home":"Away"} lineup swap: slot ${a+1} ↔ ${b+1}`);
+      saveState();
+      clearModalPick();
+      renderModalLineups();
+  renderModalBenches();
+      renderModalBenches();
+      renderPlay();
+      return;
+    }
+  };
+
+  if(awayList){
+    awayList._onClickItem=(li)=>{
+      const items=[...awayList.querySelectorAll("li")];
+      const idx=items.indexOf(li);
+      slotClick("away", li, idx);
+    };
+  }
+  if(homeList){
+    homeList._onClickItem=(li)=>{
+      const items=[...homeList.querySelectorAll("li")];
+      const idx=items.indexOf(li);
+      slotClick("home", li, idx);
+    };
+  }
+}
+
 function openModal(){
   if(!game) return alert("Start a game first.");
   const modal = el("lineupModal");
@@ -1043,6 +1151,7 @@ function openModal(){
   el("modalAwayName").textContent = `Away: ${getTeam(game.awayId).name}`;
   el("modalHomeName").textContent = `Home: ${getTeam(game.homeId).name}`;
   renderModalLineups();
+  renderModalBenches();
 }
 function closeModal(){
   const modal = el("lineupModal");
@@ -1071,6 +1180,8 @@ function initDnD(){
   makeDndList(el("benchList"));
   makeDndList(el("modalAwayList"));
   makeDndList(el("modalHomeList"));
+  makeDndList(el("modalBenchAwayList"));
+  makeDndList(el("modalBenchHomeList"));
 }
 
 function init(){

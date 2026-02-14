@@ -53,3 +53,7 @@ th{background:#0b1229;position:sticky;top:0}
 
 /* Standings */
 tr.leader td{font-weight:700;color:#dcfce7}
+
+.list li.selected, .listItem.selected{
+  outline:2px solid rgba(255,255,255,0.45);
+}

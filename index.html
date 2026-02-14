@@ -207,7 +207,50 @@
         </div>
         <div class="tableWrap"><table id="battingTable"></table></div>
       </div>
-    </section>
+    
+      <div class="card" style="margin-top:12px">
+        <h2>League Leaders</h2>
+        <div class="grid2">
+          <div class="card" style="background:#0b1229">
+            <h3 class="h3">Batting</h3>
+            <div class="row">
+              <label>Category</label>
+              <select id="leadBatCat">
+                <option value="AB">AB</option>
+                <option value="H">Hits</option>
+                <option value="HR">HR</option>
+                <option value="RBI">RBI</option>
+                <option value="AVG">Avg</option>
+              </select>
+              <label>Top</label>
+              <select id="leadTopN">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="15">15</option>
+              </select>
+            </div>
+            <div class="tableWrap"><table id="leadBatTable"></table></div>
+          </div>
+
+          <div class="card" style="background:#0b1229">
+            <h3 class="h3">Pitching</h3>
+            <div class="row">
+              <label>Category</label>
+              <select id="leadPitCat">
+                <option value="W">W</option>
+                <option value="L">L</option>
+                <option value="SV">SV</option>
+                <option value="SO">SO</option>
+                <option value="ERA">ERA</option>
+              </select>
+            </div>
+            <div class="tableWrap"><table id="leadPitTable"></table></div>
+            <div class="hint">ERA leader = lowest ERA (min 1 out recorded).</div>
+          </div>
+        </div>
+      </div>
+
+</section>
 
 
     <section class="panel" id="pitching">

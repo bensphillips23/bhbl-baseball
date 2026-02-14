@@ -764,6 +764,91 @@ function renderPitching(){
     tbl.appendChild(tr);
   }
 }
+
+function renderLeaders(){
+  const topN = Number(el("leadTopN")?.value || 10);
+
+  // ---------- Batting ----------
+  const batCat = el("leadBatCat")?.value || "AB";
+  const bat = [];
+  for(const t of state.teams){
+    for(const p of (t.roster||[])){
+      ensureBat(p.id);
+      const s = state.season.batting[p.id];
+      const avg = (s.AB>0) ? (s.H/s.AB) : 0;
+      const val = (batCat==="AVG") ? avg : (s[batCat] ?? 0);
+      if(batCat==="AVG" && s.AB===0) continue;
+      bat.push({ name:p.name, team:t.name, ab:s.AB, val });
+    }
+  }
+  bat.sort((a,b)=>{
+    if(batCat==="AVG") return b.val - a.val;
+    return (b.val - a.val) || (b.ab - a.ab);
+  });
+  const batTbl = el("leadBatTable");
+  if(batTbl){
+    batTbl.innerHTML="";
+    const trh=document.createElement("tr");
+    ["#","Player","Team","AB", batCat==="AVG" ? "AVG" : batCat].forEach(h=>{
+      const th=document.createElement("th"); th.textContent=h; trh.appendChild(th);
+    });
+    batTbl.appendChild(trh);
+    bat.slice(0, topN).forEach((row,i)=>{
+      const tr=document.createElement("tr");
+      const displayVal = (batCat==="AVG") ? row.val.toFixed(3) : String(row.val);
+      [String(i+1), row.name, row.team, String(row.ab), displayVal].forEach(v=>{
+        const td=document.createElement("td"); td.textContent=v; tr.appendChild(td);
+      });
+      batTbl.appendChild(tr);
+    });
+  }
+
+  // ---------- Pitching ----------
+  const pitCat = el("leadPitCat")?.value || "W";
+  const pit = [];
+  for(const t of state.teams){
+    for(const p of (t.pitchers||[])){
+      ensurePitch(p.id);
+      const s = state.season.pitching[p.id];
+      const ipOuts = Number(s.OUTS||0);
+      const ip = ipOuts/3;
+      const era = ip>0 ? (9*(s.R||0)/ip) : 0;
+      let val;
+      if(pitCat==="ERA"){
+        if(ipOuts<=0) continue;
+        val = era;
+      } else {
+        val = s[pitCat] ?? 0;
+      }
+      pit.push({ name:p.name, team:t.name, ipOuts, val });
+    }
+  }
+  pit.sort((a,b)=>{
+    if(pitCat==="ERA") return a.val - b.val; // lower better
+    return (b.val - a.val) || (b.ipOuts - a.ipOuts);
+  });
+  const pitTbl = el("leadPitTable");
+  if(pitTbl){
+    pitTbl.innerHTML="";
+    const trh=document.createElement("tr");
+    ["#","Pitcher","Team","IP", pitCat].forEach(h=>{
+      const th=document.createElement("th"); th.textContent=h; trh.appendChild(th);
+    });
+    pitTbl.appendChild(trh);
+    pit.slice(0, topN).forEach((row,i)=>{
+      const tr=document.createElement("tr");
+      const displayVal = (pitCat==="ERA") ? row.val.toFixed(2) : String(row.val);
+      const ipStr = outsToIP(row.ipOuts);
+      [String(i+1), row.name, row.team, ipStr, displayVal].forEach(v=>{
+        const td=document.createElement("td"); td.textContent=v; tr.appendChild(td);
+      });
+      pitTbl.appendChild(tr);
+    });
+  }
+  renderLeaders();
+
+}
+
 function renderStats(){
 
   const team=getTeam(el("statsTeam").value);
@@ -1140,6 +1225,9 @@ el("simSelected").onclick=()=>{
 
   // stats
   el("statsTeam").onchange=renderStats;
+  if(el("leadBatCat")) el("leadBatCat").onchange=renderLeaders;
+  if(el("leadPitCat")) el("leadPitCat").onchange=renderLeaders;
+  if(el("leadTopN")) el("leadTopN").onchange=renderLeaders;
   if(el("pitchTeam")) el("pitchTeam").onchange=renderPitching;
   if(el("recalcStandings")) el("recalcStandings").onclick=renderStandings;
   el("resetStats").onclick=()=>{

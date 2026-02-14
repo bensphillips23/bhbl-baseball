@@ -391,6 +391,7 @@ function newGame(homeId, awayId){
     pitcher:{home:"", away:""},
     seasonLink:null,
     decision:{ runEvents:[], pitcherEntries:{}, pitchOuts:{}, finalDecisions:null },
+    final:false,
     log:[]
   };
 }
@@ -400,6 +401,16 @@ function batterId(g){
   const arr = g.lineup[side];
   return arr[g.idx[side] % arr.length];
 }
+
+
+function isGameOver(g){
+  // Game can end only after the bottom half of an inning (or after top in walk-off rules; not implemented)
+  // We use simple rule: after completing bottom of inning >= 9, if score not tied => final.
+  if(g.inning < 9) return false;
+  if(g.half !== "top") return false; // means we just completed bottom and flipped to top
+  return g.score.home !== g.score.away;
+}
+
 function nextBatter(g){
   const side = battingSide(g);
   g.idx[side] = (g.idx[side] + 1) % g.lineup[side].length;
@@ -413,7 +424,12 @@ function endHalf(g){
   g.outs=0; g.bases=[null,null,null];
   g.half = (g.half==="top") ? "bottom" : "top";
   if(g.half==="top") g.inning += 1;
+  if(isGameOver(g)){
+    g.final = true;
+    addLog(g, `Final: ${g.score.away}–${g.score.home}`);
+  }
 }
+
 
 function creditRun(pid){ if(!pid) return; ensureBat(pid); state.season.batting[pid].R += 1; }
 function rbi(bid){ if(!bid) return; ensureBat(bid); state.season.batting[bid].RBI += 1; }
@@ -833,6 +849,7 @@ function creditPitchFromCode(g, code){
 
 function doRoll(){
   if(!game) return;
+  if(game.final) return alert("Game is final. Start a new game or load the next scheduled game.");
   if(game.outs>=3) endHalf(game);
 
   const bid=batterId(game);
@@ -857,7 +874,7 @@ function simHalf(){
 function simGame(){
   if(!game) return;
   let safety=0;
-  while(game.inning<=9 && safety<5000){ doRoll(); safety++; }
+  while(!game.final && safety<20000){ doRoll(); safety++; }
   addLog(game, "Simulation finished (through 9 innings).");
   saveState();
   renderPlay();
@@ -882,6 +899,9 @@ function startSeasonGameFromSchedule(sched){
 
 function finalizeSeasonGame(){
   if(!game) return alert("No active game.");
+  if(!game.final){
+    if(!confirm("Game is not final (may be tied). Finalize anyway?")) return;
+  }
   if(!game.seasonLink?.scheduleId) return alert("This game is not linked to the schedule.");
   const sched = state.schedule.find(x=>x.id===game.seasonLink.scheduleId);
   if(!sched) return alert("Scheduled game not found.");

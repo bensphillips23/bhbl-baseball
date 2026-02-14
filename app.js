@@ -46,6 +46,18 @@ function loadState(){
       if(t.defaultSPId===undefined) t.defaultSPId=null;
     }
     if(!s.schedule) s.schedule=[];
+    // v5 schedule migration: assign game numbers
+    let maxNo=0;
+    for(const g of s.schedule){
+      if(g.gameNo) maxNo=Math.max(maxNo, Number(g.gameNo)||0);
+    }
+    for(const g of s.schedule){
+      if(!g.gameNo){ maxNo += 1; g.gameNo = maxNo; }
+      if(g.status===undefined) g.status="scheduled";
+      if(g.awayScore===undefined) g.awayScore=0;
+      if(g.homeScore===undefined) g.homeScore=0;
+      if(g.playedAt===undefined) g.playedAt=null;
+    }
     if(!s.season) s.season={batting:{}, pitching:{}};
     if(!s.season.batting) s.season.batting={};
     if(!s.season.pitching) s.season.pitching={};
@@ -217,7 +229,7 @@ let selectedGameId = null;
 function renderSchedule(){
   const list = el("scheduleList");
   list.innerHTML="";
-  const sched = state.schedule.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const sched = state.schedule.slice().sort((a,b)=>(Number(a.gameNo||0)-Number(b.gameNo||0)));
   if(!sched.length){
     list.innerHTML = `<div class="hint" style="padding:10px">No games scheduled.</div>`;
     selectedGameId=null;
@@ -229,14 +241,31 @@ function renderSchedule(){
     const row = document.createElement("div");
     row.className = "schedRow" + (g.id===selectedGameId ? " selected" : "");
     const status = g.status==="final" ? `<span class="final">Final</span> ${g.awayScore}-${g.homeScore}` : `<span class="meta">Scheduled</span>`;
-    row.innerHTML = `<div>${g.date || ""}</div><div><b>${away}</b></div><div><b>${home}</b></div><div>${status}</div>`;
+    row.innerHTML = `<div>Game ${g.gameNo ?? ""}</div><div><b>${away}</b></div><div><b>${home}</b></div><div>${status}</div>`;
     row.onclick = ()=>{ selectedGameId = g.id; renderSchedule();
     renderStandings(); };
     list.appendChild(row);
   }
 }
-function addScheduledGame(date, awayId, homeId){
-  state.schedule.push({ id: uid(), date, awayId, homeId, status:"scheduled", awayScore:0, homeScore:0, playedAt:null });
+
+function nextGameNo(){
+  let maxNo=0;
+  for(const g of state.schedule){
+    maxNo = Math.max(maxNo, Number(g.gameNo||0));
+  }
+  return maxNo + 1;
+}
+function addScheduledGame(awayId, homeId){
+  state.schedule.push({
+    id: uid(),
+    gameNo: nextGameNo(),
+    awayId,
+    homeId,
+    status:"scheduled",
+    awayScore:0,
+    homeScore:0,
+    playedAt:null
+  });
   saveState();
 }
 
@@ -255,6 +284,7 @@ function newGame(homeId, awayId){
     idx:{home:0,away:0},
     lineup:{home:buildGameLineup(home), away:buildGameLineup(away)},
     pitcher:{home:"", away:""},
+    seasonLink:null,
     log:[]
   };
 }
@@ -722,6 +752,37 @@ function simGame(){
   renderPlay();
 }
 
+
+function startSeasonGameFromSchedule(sched){
+  const homeId = sched.homeId;
+  const awayId = sched.awayId;
+  game = newGame(homeId, awayId);
+  game.seasonLink = { scheduleId: sched.id, gameNo: sched.gameNo };
+  // default pitchers
+  game.pitcher.home = getTeam(homeId)?.defaultSPId || "";
+  game.pitcher.away = getTeam(awayId)?.defaultSPId || "";
+  addLog(game, `Season game loaded: Game ${sched.gameNo}.`);
+  saveState();
+  showTab("play");
+  renderPlay();
+}
+
+function finalizeSeasonGame(){
+  if(!game) return alert("No active game.");
+  if(!game.seasonLink?.scheduleId) return alert("This game is not linked to the schedule.");
+  const sched = state.schedule.find(x=>x.id===game.seasonLink.scheduleId);
+  if(!sched) return alert("Scheduled game not found.");
+  sched.status = "final";
+  sched.awayScore = game.score.away;
+  sched.homeScore = game.score.home;
+  sched.playedAt = new Date().toISOString();
+  saveState();
+  renderSchedule();
+  renderStandings();
+  renderPitching();
+  alert(`Finalized: Game ${sched.gameNo} (${getTeam(sched.awayId)?.name||"Away"} ${sched.awayScore} - ${sched.homeScore} ${getTeam(sched.homeId)?.name||"Home"})`);
+}
+
 // Schedule sim: simple uses doRoll loop in a temp game
 function simulateScheduledGame(gameObj){
   const g = newGame(gameObj.homeId, gameObj.awayId);
@@ -891,15 +952,34 @@ function init(){
 
   // schedule
   el("addGame").onclick=()=>{
-    const date=el("gameDate").value;
     const away=el("schedAway").value;
     const home=el("schedHome").value;
-    if(!date) return alert("Pick a date.");
     if(away===home) return alert("Pick two different teams.");
-    addScheduledGame(date, away, home);
+    addScheduledGame(away, home);
     renderSchedule();
   };
-  el("simSelected").onclick=()=>{
+  
+if(el("deleteSelected")) el("deleteSelected").onclick=()=>{
+  const g = state.schedule.find(x=>x.id===selectedGameId);
+  if(!g) return alert("Click a game row to select it.");
+  if(!confirm(`Delete Game ${g.gameNo} (${getTeam(g.awayId)?.name||"Away"} @ ${getTeam(g.homeId)?.name||"Home"})?`)) return;
+  state.schedule = state.schedule.filter(x=>x.id!==g.id);
+  selectedGameId = null;
+  saveState();
+  renderSchedule();
+  renderStandings();
+};
+
+if(el("playSelected")) el("playSelected").onclick=()=>{
+  const g = state.schedule.find(x=>x.id===selectedGameId);
+  if(!g) return alert("Click a game row to select it.");
+  if(g.status==="final") return alert("That game is already final.");
+  startSeasonGameFromSchedule(g);
+};
+
+if(el("finalizeGame")) el("finalizeGame").onclick=finalizeSeasonGame;
+
+el("simSelected").onclick=()=>{
     const g = state.schedule.find(x=>x.id===selectedGameId);
     if(!g) return alert("Click a game to select it.");
     if(g.status==="final") return alert("That game is already final.");

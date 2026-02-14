@@ -58,6 +58,7 @@
             <button id="roll" class="primary">Roll 2d6</button>
             <button id="simHalf">Sim Half</button>
             <button id="simGame">Sim Game</button>
+            <button id="finalizeGame" class="primary">Finalize Game (Season)</button>
           </div>
 
           <div class="row">
@@ -169,13 +170,14 @@
       <div class="card">
         <h2>Schedule</h2>
         <div class="row">
-          <input id="gameDate" type="date"/>
-          <label>Away</label><select id="schedAway"></select>
+<label>Away</label><select id="schedAway"></select>
           <label>Home</label><select id="schedHome"></select>
           <button id="addGame" class="primary">Add Game</button>
         </div>
         <div class="row">
           <button id="simSelected" class="primary">Sim Selected Game</button>
+          <button id="playSelected">Play Selected Game</button>
+          <button id="deleteSelected" class="danger">Delete Selected</button>
           <button id="simAll">Sim All Remaining</button>
         </div>
         <div class="hint">Tip: click a scheduled game to select it. Completed games are marked “Final”.</div>

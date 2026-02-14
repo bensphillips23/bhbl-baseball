@@ -183,7 +183,38 @@
         <div class="hint">Tip: click a scheduled game to select it. Completed games are marked “Final”.</div>
         <div id="scheduleList" class="scheduleList"></div>
       </div>
-    </section>
+    
+      <div class="card" style="margin-top:12px">
+        <h2>Schedule Generator</h2>
+        <div class="row">
+          <label>Rounds</label>
+          <select id="genRounds">
+            <option value="1">1 (play each opponent once)</option>
+            <option value="2" selected>2 (home &amp; away)</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
+          <label>Series length</label>
+          <select id="genSeries">
+            <option value="1" selected>1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>Mode</label>
+          <select id="genMode">
+            <option value="replace" selected>Replace existing schedule</option>
+            <option value="append">Append to existing schedule</option>
+          </select>
+          <button id="genSchedule" class="primary">Generate</button>
+          <button id="clearSchedule" class="danger">Clear Schedule</button>
+        </div>
+        <div class="hint">Round-robin generator. Game numbers are assigned automatically. For odd team counts, one team has a bye each round.</div>
+      </div>
+
+</section>
 
 
     <section class="panel" id="standings">

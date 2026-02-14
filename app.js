@@ -356,6 +356,8 @@ function renderSchedule(){
     const status = g.status==="final" ? `<span class="final">Final</span> ${g.awayScore}-${g.homeScore}` : `<span class="meta">Scheduled</span>`;
     row.innerHTML = `<div>Game ${g.gameNo ?? ""}</div><div><b>${away}</b></div><div><b>${home}</b></div><div>${status}</div>`;
     row.onclick = ()=>{ selectedGameId = g.id; renderSchedule();
+  if(el("genSchedule")) el("genSchedule").onclick=generateSchedule;
+  if(el("clearSchedule")) el("clearSchedule").onclick=clearScheduleAll;
     renderStandings(); };
     list.appendChild(row);
   }
@@ -381,6 +383,99 @@ function addScheduledGame(awayId, homeId){
   });
   saveState();
 }
+
+
+function rrPairings(teamIds){
+  // Circle method. Returns rounds: array of pairs [homeId, awayId].
+  const ids = teamIds.slice();
+  if(ids.length % 2 === 1) ids.push(null); // bye
+  const n = ids.length;
+  const rounds = n - 1;
+  const half = n / 2;
+  const arr = ids.slice();
+  const out = [];
+
+  for(let r=0;r<rounds;r++){
+    const pairs=[];
+    for(let i=0;i<half;i++){
+      const a = arr[i];
+      const b = arr[n-1-i];
+      if(a!==null && b!==null){
+        // alternate by round for some balance
+        const home = (r % 2 === 0) ? a : b;
+        const away = (r % 2 === 0) ? b : a;
+        pairs.push([home, away]);
+      }
+    }
+    out.push(pairs);
+    // rotate (keep first fixed)
+    const fixed = arr[0];
+    const rest = arr.slice(1);
+    rest.unshift(rest.pop());
+    arr.splice(0, arr.length, fixed, ...rest);
+  }
+  return out;
+}
+
+function generateSchedule(){
+  const rounds = Number(el("genRounds")?.value || 2);
+  const series = Number(el("genSeries")?.value || 1);
+  const mode = el("genMode")?.value || "replace";
+  const baseIds = state.teams.map(t=>t.id).filter(Boolean);
+  if(baseIds.length < 2) return alert("Add at least 2 teams first.");
+
+  if(mode==="replace" && state.schedule.length>0){
+    if(!confirm("Replace the existing schedule?")) return;
+    state.schedule = [];
+  }
+  if(mode==="append" && state.schedule.length>0){
+    if(!confirm("Append generated games to the existing schedule?")) return;
+  }
+
+  let gameNo = 1;
+  for(const g of state.schedule){
+    gameNo = Math.max(gameNo, Number(g.gameNo||0)+1);
+  }
+
+  for(let pass=0; pass<rounds; pass++){
+    const ids = baseIds.slice();
+    // invert home/away on odd passes to approximate home/away balance
+    if(pass % 2 === 1) ids.reverse();
+
+    const rr = rrPairings(ids);
+    for(const pairs of rr){
+      for(const [homeId, awayId] of pairs){
+        for(let s=0; s<series; s++){
+          state.schedule.push({
+            id: uid(),
+            gameNo: gameNo++,
+            awayId,
+            homeId,
+            status:"scheduled",
+            awayScore:0,
+            homeScore:0,
+            playedAt:null
+          });
+        }
+      }
+    }
+  }
+
+  saveState();
+  renderSchedule();
+  renderStandings();
+}
+
+function clearScheduleAll(){
+  if(state.schedule.length===0) return;
+  if(!confirm("Clear the entire schedule?")) return;
+  state.schedule = [];
+  selectedGameId = null;
+  saveState();
+  renderSchedule();
+  renderStandings();
+}
+
 
 // -------- Game Engine --------
 let game = null;

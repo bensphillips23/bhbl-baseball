@@ -1,4 +1,4 @@
-const APP_VERSION = "5.8.7";
+const APP_VERSION = "5.8.8";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -156,9 +156,32 @@ function notePitcherEntry(teamSide, pid){
 
 
 function isSeasonGame(g){
+
+function ensureGameBox(g){
+  g.box = g.box || {batting:{}, pitching:{}, events:[]};
+  g.box.batting = g.box.batting || {};
+  g.box.pitching = g.box.pitching || {};
+}
+function initBatLine(){
+  return {G:0,AB:0,H:0,R:0,RBI:0,HR:0,BB:0,SO:0,"2B":0,"3B":0};
+}
+function initPitchLine(){
+  return {G:0,OUTS:0,H:0,R:0,ER:0,HR:0,BB:0,SO:0,W:0,L:0,SV:0};
+}
+function gameBat(pid){
+  ensureGameBox(game);
+  if(!game.box.batting[pid]) game.box.batting[pid]=initBatLine();
+  return game.box.batting[pid];
+}
+function gamePitch(pid){
+  ensureGameBox(game);
+  if(!game.box.pitching[pid]) game.box.pitching[pid]=initPitchLine();
+  return game.box.pitching[pid];
+}
+
   return !!(g && g.seasonLink && g.seasonLink.scheduleId);
 }
-function batStore(g, pid){
+function gameBat(pid){
   if(isSeasonGame(g)){
     ensureBat(pid);
     return state.season.batting[pid];
@@ -167,7 +190,7 @@ function batStore(g, pid){
     return g.box.batting[pid];
   }
 }
-function pitchStore(g, pid){
+function gamePitch(pid){
   if(isSeasonGame(g)){
     ensurePitch(pid);
     return state.season.pitching[pid];
@@ -684,11 +707,13 @@ function fcLeadOut(g, bid){
 
 function apply(code, roll){
   const g=game;
+
+  const g=game;
   const bid=batterId(game);
   const batter=getPlayer(bid);
   // snapshot outs at start of play (for 3rd-out run rule)
   g._outsBeforePlay = g.outs;
-  const s = batStore(g, bid);
+  const s = gameBat(bid);
 
   if(code==="BB") { s.BB += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → WALK`); walkAdvance(game, bid); nextBatter(game); return; }
   if(code==="K") { s.AB += 1; s.SO += 1; game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → STRIKEOUT`); nextBatter(game); return; }
@@ -1001,8 +1026,7 @@ function renderLeaders(){
   const bat = [];
   for(const t of state.teams){
     for(const p of (t.roster||[])){
-      ensureBat(p.id);
-      const s = state.season.batting[p.id];
+      const s = gameBat(bid);
       const avg = (s.AB>0) ? (s.H/s.AB) : 0;
       const val = (batCat==="AVG") ? avg : (s[batCat] ?? 0);
       if(batCat==="AVG" && s.AB===0) continue;
@@ -1088,8 +1112,7 @@ function renderStats(){
   head.forEach(h=>{ const th=document.createElement("th"); th.textContent=h; trh.appendChild(th); });
   tbl.appendChild(trh);
   for(const p of team.roster){
-    ensureBat(p.id);
-    const s=state.season.batting[p.id];
+    const s = gameBat(bid);
     const tr=document.createElement("tr");
     const vals=[`${p.name} (${p.pos})`,s.AB,s.H,s["2B"],s["3B"],s.HR,s.RBI,s.R,s.BB,s.SO,battingAvg(s).toFixed(3).replace(/^0/,"")];
     vals.forEach(v=>{ const td=document.createElement("td"); td.textContent=String(v); tr.appendChild(td); });
@@ -1145,7 +1168,7 @@ function creditPitchFromCode(g, code){
   }
   const pid = currentPitcherId(g);
   if(!pid) return;
-  const ps = pitchStore(g, pid);
+  const ps = gamePitch(pid);
   const gps = null;
 
   if(code==="BB"){ ps.BB += 1; if(gps) gps.BB += 1; return; }
@@ -1223,6 +1246,29 @@ function finalizeSeasonGame(){
   if(!game) return alert("No active game.");
   if(!isSeasonGame(game)) return alert("This is a Play Mode game (not scheduled). Season stats are not recorded—schedule it first.");
   if(!game.final){
+// merge game.box into season totals (season stats are not updated during play)
+ensureGameBox(game);
+state.season = state.season || {batting:{}, pitching:{}, standings:{}};
+state.season.batting = state.season.batting || {};
+state.season.pitching = state.season.pitching || {};
+
+Object.entries(game.box.batting).forEach(([pid, line])=>{
+  if(!state.season.batting[pid]) state.season.batting[pid]=initBatLine();
+  const s=state.season.batting[pid];
+  // games: count 1 if player had any PA (AB+BB>0)
+  const played = (line.AB + line.BB) > 0 ? 1 : 0;
+  s.G += played;
+  ["AB","H","R","RBI","HR","BB","SO","2B","3B"].forEach(k=>{ s[k]=(s[k]||0)+(line[k]||0); });
+});
+
+Object.entries(game.box.pitching).forEach(([pid, line])=>{
+  if(!state.season.pitching[pid]) state.season.pitching[pid]=initPitchLine();
+  const p=state.season.pitching[pid];
+  const played = (line.OUTS||0) > 0 ? 1 : 0;
+  p.G += played;
+  ["OUTS","H","R","ER","HR","BB","SO","W","L","SV"].forEach(k=>{ p[k]=(p[k]||0)+(line[k]||0); });
+});
+
     if(!confirm("Game is not final (may be tied). Finalize anyway?")) return;
   }
   if(!game.seasonLink?.scheduleId) return alert("This game is not linked to the schedule.");

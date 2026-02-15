@@ -1,4 +1,4 @@
-const APP_VERSION = "5.8.9";
+const APP_VERSION = "5.9.0";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -645,11 +645,15 @@ function batterId(g){
 
 
 function isGameOver(g){
-  // Game can end only after the bottom half of an inning (or after top in walk-off rules; not implemented)
-  // We use simple rule: after completing bottom of inning >= 9, if score not tied => final.
-  if(g.inning < 9) return false;
-  if(g.half !== "top") return false; // means we just completed bottom and flipped to top
-  return g.score.home !== g.score.away;
+  // End rules:
+  // 1) After TOP of 9+ : if home team is leading, game ends (no need to play bottom).
+  if(g.inning >= 9 && g.half==="top" && g.score.home > g.score.away) return true;
+
+  // 2) After BOTTOM of 9+ : if score is not tied, game ends.
+  // In our engine, we evaluate this right when a bottom half ends.
+  if(g.inning >= 9 && g.half==="bottom" && g.score.home !== g.score.away) return true;
+
+  return false;
 }
 
 function nextBatter(g){
@@ -662,13 +666,30 @@ function addLog(g,msg){
   if(g.log.length>250) g.log.length=250;
 }
 function endHalf(g){
+  // reset inning state
   g.outs=0; g.bases=[null,null,null];
-  g.half = (g.half==="top") ? "bottom" : "top";
-  if(g.half==="top") g.inning += 1;
-  if(isGameOver(g)){
+
+  if(g.half==="top"){
+    // finished top half -> go to bottom (same inning)
+    // If it's 9th+ and home is already leading, skip bottom and end.
+    if(g.inning>=9 && g.score.home > g.score.away){
+      g.final = true;
+      addLog(g, `Final: ${g.score.away}–${g.score.home}`);
+      return;
+    }
+    g.half="bottom";
+    return;
+  }
+
+  // finished bottom half -> inning complete
+  if(g.inning>=9 && g.score.home !== g.score.away){
     g.final = true;
     addLog(g, `Final: ${g.score.away}–${g.score.home}`);
+    return;
   }
+
+  g.half="top";
+  g.inning += 1;
 }
 
 
@@ -732,11 +753,11 @@ function apply(code, roll){
 
   if(code==="BB") { s.BB += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → WALK`); walkAdvance(game, bid); nextBatter(game); return; }
   if(code==="K") { s.AB += 1; s.SO += 1; game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → STRIKEOUT`); nextBatter(game); return; }
-  if(code.startsWith("FO")) { s.AB += 1; game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → FLY OUT`); if(code==="FO_1") advanceAll(game, 1, null, -1); nextBatter(game); return; }
+  if(code.startsWith("FO")) { s.AB += 1; game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → FLY OUT`); if(code==="FO_1") advanceAll(game, 1, bid, -1); nextBatter(game); return; }
   if(code.startsWith("GO")) {
     s.AB += 1;
     if(code==="GO_L") { const d=fcLeadOut(game,bid); addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → GROUNDBALL → ${d}`); nextBatter(game); return; }
-    game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → GROUNDBALL, batter out`); if(code==="GO_B1") advanceAll(game, 1, null, -1); nextBatter(game); return;
+    game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → GROUNDBALL, batter out`); if(code==="GO_B1") advanceAll(game, 1, bid, -1); nextBatter(game); return;
   }
 
   // hits

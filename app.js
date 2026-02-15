@@ -477,6 +477,7 @@ function clearScheduleAll(){
 
 // -------- Game Engine --------
 let game = null;
+let simFast = false;
 
 function buildGameLineup(team){ return normalizedLineup(team); }
 
@@ -497,6 +498,63 @@ function newGame(homeId, awayId){
   };
 }
 function battingSide(g){ return g.half==="top" ? "away" : "home"; }
+
+
+function updateScoreboardUI(){
+  const sb = el("scoreboardSticky");
+  if(!sb) return;
+  if(!game){
+    el("sbAwayName").textContent="Away";
+    el("sbHomeName").textContent="Home";
+    el("sbAwayScore").textContent="0";
+    el("sbHomeScore").textContent="0";
+    el("sbInning").textContent="";
+    el("sbOuts").textContent="";
+    el("sbNote").textContent="";
+    ["d1","d2","d3"].forEach(id=>el(id)?.classList.remove("occ"));
+    el("sbAway")?.classList.remove("active");
+    el("sbHome")?.classList.remove("active");
+    return;
+  }
+  const awayT=getTeam(game.awayId);
+  const homeT=getTeam(game.homeId);
+  el("sbAwayName").textContent = awayT?.name || "Away";
+  el("sbHomeName").textContent = homeT?.name || "Home";
+  el("sbAwayScore").textContent = String(game.score.away);
+  el("sbHomeScore").textContent = String(game.score.home);
+
+  const inn = `${game.half.toUpperCase()} ${game.inning}`;
+  el("sbInning").textContent = game.final ? "FINAL" : inn;
+  const outs = game.outs;
+  el("sbOuts").textContent = `${outs} out${outs===1?"":"s"}`;
+
+  const batting = battingSide(game);
+  el("sbHome").classList.toggle("active", batting==="home" && !game.final);
+  el("sbAway").classList.toggle("active", batting==="away" && !game.final);
+
+  el("d1")?.classList.toggle("occ", !!game.bases?.b1);
+  el("d2")?.classList.toggle("occ", !!game.bases?.b2);
+  el("d3")?.classList.toggle("occ", !!game.bases?.b3);
+
+  const hp = getPitcher(game.homeId, game.pitcher?.home)?.name;
+  const ap = getPitcher(game.awayId, game.pitcher?.away)?.name;
+  el("sbNote").textContent = (hp||ap) ? `P: ${ap||"?"} / ${hp||"?"}` : "";
+}
+
+function triggerPlayFX(code){
+  if(simFast) return;
+  const sb = el("scoreboardSticky");
+  if(!sb) return;
+  sb.classList.remove("playFX-good","playFX-hr","playFX-bad");
+  void sb.offsetWidth;
+  const good = ["1B","2B","3B","BB","HBP"].includes(code);
+  const hr = code==="HR";
+  const bad = ["K","GO","FO","PO","LO","DP"].includes(code);
+  if(hr) sb.classList.add("playFX-hr");
+  else if(good) sb.classList.add("playFX-good");
+  else if(bad) sb.classList.add("playFX-bad");
+}
+
 function batterId(g){
   const side = battingSide(g);
   const arr = g.lineup[side];
@@ -661,6 +719,7 @@ function renderPlay(){
     el("log").textContent="";
     el("b1").classList.remove("on"); el("b2").classList.remove("on"); el("b3").classList.remove("on");
     el("batter").textContent="-"; el("tier").textContent="-"; el("hr").textContent="-";
+    updateScoreboardUI();
     return;
   }
   el("inning").textContent=String(game.inning);
@@ -682,7 +741,9 @@ function renderPlay(){
   el("tier").textContent=tierLabel(batter?.tier ?? "");
   el("hr").textContent=hrLabel(batter?.hr ?? "lt20");
   el("log").textContent=game.log.join("\n");
+  updateScoreboardUI();
 }
+
 
 
 function renderPitchers(){
@@ -1052,19 +1113,25 @@ function doRoll(){
   renderPlay();
 }
 function simHalf(){
+  simFast = true;
   if(!game) return;
   const startHalf=game.half, startIn=game.inning;
   let safety=0;
   while(game.half===startHalf && game.inning===startIn && safety<200){ doRoll(); safety++; }
+  simFast = false;
 }
+
 function simGame(){
+  simFast = true;
   if(!game) return;
   let safety=0;
   while(!game.final && safety<20000){ doRoll(); safety++; }
   addLog(game, "Simulation finished (through 9 innings).");
   saveState();
   renderPlay();
+  simFast = false;
 }
+
 
 
 function startSeasonGameFromSchedule(sched){

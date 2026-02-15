@@ -46,7 +46,25 @@
             <div class="pill">Outs: <span id="outs">-</span></div>
           </div>
 
-          <div class="bases">
+          
+          <div id="scoreboardSticky" class="scoreboardSticky">
+            <div class="sbTeams">
+              <div class="sbTeam" id="sbAway"><span class="sbName" id="sbAwayName">Away</span><span class="sbScore" id="sbAwayScore">0</span></div>
+              <div class="sbTeam" id="sbHome"><span class="sbName" id="sbHomeName">Home</span><span class="sbScore" id="sbHomeScore">0</span></div>
+            </div>
+
+            <div class="sbMeta">
+              <div class="sbLine"><span class="sbInning" id="sbInning">TOP 1</span><span class="sbDot">•</span><span class="sbOuts" id="sbOuts">0 outs</span></div>
+              <div class="sbSmall" id="sbNote"></div>
+            </div>
+
+            <div class="sbDiamond" aria-label="Bases">
+              <div class="baseD base2" id="d2"></div>
+              <div class="baseD base1" id="d1"></div>
+              <div class="baseD base3" id="d3"></div>
+            </div>
+          </div>
+<div class="bases">
             <div class="base" id="b1">1B</div>
             <div class="base" id="b2">2B</div>
             <div class="base" id="b3">3B</div>

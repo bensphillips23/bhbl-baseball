@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BHBL Dice Baseball</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0b1020" />
+  <link rel="stylesheet" href="styles.css?v=5.8.5" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>BHBL Dice Baseball <span class="ver" id="appVersion"></span></h1>
+      <div class="sub">v2 — Lineups + Schedule. Installable (PWA). Saves locally on your PC.</div>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="play">Play</button>
+      <button class="tab" data-tab="league">League</button>
+      <button class="tab" data-tab="schedule">Schedule</button>
+      <button class="tab" data-tab="standings">Standings</button>
+      <button class="tab" data-tab="stats">Stats</button>
+      <button class="tab" data-tab="pitching">Pitching</button>
+      <button class="tab" data-tab="backup">Backup</button>
+    </nav>
+  </header>
+  <div id="ticker" class="ticker hidden">
+    <div class="tickerLabel">LEAGUE</div>
+    <div class="tickerMsg" id="tickerMsg"></div>
+    <button class="tickerX" id="tickerClose" title="Dismiss">×</button>
+  </div>
+
+
+  <main>
+    <section class="panel active" id="play">
+      <div class="grid2">
+        <div class="card">
+          <h2>Game</h2>
+          <div class="row">
+            <label>Home</label><select id="homeTeam"></select>
+            <label>Away</label><select id="awayTeam"></select>
+            <label>Home P</label><select id="homePitcher"></select>
+            <label>Away P</label><select id="awayPitcher"></select>
+            <button id="startGame" class="primary">Start</button>
+            <button id="editLineup">Edit Lineups</button>
+            <button id="editPitchers">Edit Pitchers</button>
+          </div>
+
+          <div class="row">
+            <div class="pill">Inning: <span id="inning">-</span></div>
+            <div class="pill">Half: <span id="half">-</span></div>
+            <div class="pill">Outs: <span id="outs">-</span></div>
+          </div>
+
+          
+          <div id="scoreboardSticky" class="scoreboardSticky">
+            <div class="sbTeams">
+              <div class="sbTeam" id="sbAway"><span class="sbName" id="sbAwayName">Away</span><span class="sbScore" id="sbAwayScore">0</span></div>
+              <div class="sbTeam" id="sbHome"><span class="sbName" id="sbHomeName">Home</span><span class="sbScore" id="sbHomeScore">0</span></div>
+            </div>
+
+            <div class="sbMeta">
+              <div class="sbLine"><span class="sbInning" id="sbInning">TOP 1</span><span class="sbDot">•</span><span class="sbOuts" id="sbOuts">0 outs</span></div>
+              <div class="sbSmall" id="sbNote"></div>
+            </div>
+
+            <div class="sbDiamond" aria-label="Bases">
+              <div class="baseD base2" id="d2"></div>
+              <div class="baseD base1" id="d1"></div>
+              <div class="baseD base3" id="d3"></div>
+            </div>
+          </div>
+<div class="bases">
+            <div class="base" id="b1">1B</div>
+            <div class="base" id="b2">2B</div>
+            <div class="base" id="b3">3B</div>
+          </div>
+
+          <div class="score" id="score">Start a game.</div>
+
+          <div class="row">
+            <button id="roll" class="primary">Roll 2d6</button>
+            <button id="simHalf">Sim Half</button>
+            <button id="simGame">Sim Game</button>
+            <button id="finalizeGame" class="primary">Finalize Game (Season)</button>
+          </div>
+
+          <div class="row">
+            <div class="pill">Home P: <span id="curHomeP">-</span></div>
+            <div class="pill">Away P: <span id="curAwayP">-</span></div>
+          </div>
+
+          <div class="row">
+            <div class="pill">Batter: <span id="batter">-</span></div>
+            <div class="pill">Tier: <span id="tier">-</span></div>
+            <div class="pill">HR: <span id="hr">-</span></div>
+          </div>
+
+          <pre class="log" id="log"></pre>
+
+          <div class="hint">
+            New: saved batting orders per team + in-game lineup edits. Next: pitching, box scores, season standings.
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Quick Actions</h2>
+          <div class="hint">Schedule games, then simulate from the Schedule tab.</div>
+          <div class="row">
+            <button id="jumpSchedule">Go to Schedule</button>
+            <button id="jumpLeague">Go to League</button>
+          </div>
+          <hr class="sep"/>
+          <div class="hint"><b>Lineups:</b> League tab saves a default batting order per team. In-game edits affect only the current game.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="league">
+      <div class="grid2">
+        <div class="card">
+          <h2>Teams</h2>
+          <div class="row">
+            <input id="newTeam" placeholder="Team name" />
+            <button id="addTeam" class="primary">Add</button>
+          </div>
+          <div id="teamsList"></div>
+        </div>
+
+        <div class="card">
+          <h2>Players</h2>
+          <div class="row">
+            <label>Team</label><select id="rosterTeam"></select>
+          </div>
+          <div class="row">
+            <input id="playerName" placeholder="Player name" />
+            <input id="playerPos" placeholder="Pos (SS)" />
+          </div>
+          <div class="row">
+            <label>BA Tier</label>
+            <select id="playerTier"></select>
+            <label>HR</label>
+            <select id="playerHr">
+              <option value="lt20">&lt; 20 HR</option>
+              <option value="ge20">20+ HR</option>
+            </select>
+            <button id="addPlayer" class="primary">Add Player</button>
+          </div>
+          <div id="rosterList"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <h2>Batting Order (Drag to reorder)</h2>
+        <div class="row">
+          <label>Team</label><select id="lineupTeam"></select>
+          <button id="saveLineup" class="primary">Save Lineup</button>
+          <span class="small">Saved lineup is used when you start a new game.</span>
+        </div>
+        <div class="hint">Drag players to set the 1–9 batting order. If you have more than 9, the extra players are bench.</div>
+        <div class="lineupWrap">
+          <ol id="lineupList" class="dndList"></ol>
+          <div>
+            <div class="small" style="margin-bottom:6px">Bench (optional)</div>
+            <ul id="benchList" class="dndList"></ul>
+          </div>
+        </div>
+      
+      <div class="card" style="margin-top:12px">
+        <h2>Pitchers</h2>
+        <div class="row">
+          <label>Team</label><select id="pitRosterTeam"></select>
+        </div>
+        <div class="row">
+          <input id="pitcherName" placeholder="Pitcher name" />
+          <label>Role</label>
+          <select id="pitcherRole">
+            <option value="SP">SP</option>
+            <option value="RP">RP</option>
+          </select>
+          <button id="addPitcher" class="primary">Add Pitcher</button>
+        </div>
+        <div class="row">
+          <label>Default SP</label><select id="defaultSP"></select>
+        </div>
+        <div id="pitcherList"></div>
+        <div class="hint">Default SP is pre-selected when you start a game. You can switch pitchers during a game.</div>
+      </div>
+
+      </div>
+    </section>
+
+    <section class="panel" id="schedule">
+      <div class="card">
+        <h2>Schedule</h2>
+        <div class="row">
+<label>Away</label><select id="schedAway"></select>
+          <label>Home</label><select id="schedHome"></select>
+          <button id="addGame" class="primary">Add Game</button>
+        </div>
+        <div class="row">
+          <button id="simSelected" class="primary">Sim Selected Game</button>
+          <button id="playSelected">Play Selected Game</button>
+          <button id="deleteSelected" class="danger">Delete Selected</button>
+          <button id="simAll">Sim All Remaining</button>
+        </div>
+        <div class="hint">Tip: click a scheduled game to select it. Completed games are marked “Final”.</div>
+        <div id="scheduleList" class="scheduleList"></div>
+      </div>
+    
+      <div class="card" style="margin-top:12px">
+        <h2>Schedule Generator</h2>
+        <div class="row">
+          <label>Rounds</label>
+          <select id="genRounds">
+            <option value="1">1 (play each opponent once)</option>
+            <option value="2" selected>2 (home &amp; away)</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+          </select>
+          <label>Series length</label>
+          <select id="genSeries">
+            <option value="1" selected>1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>Mode</label>
+          <select id="genMode">
+            <option value="replace" selected>Replace existing schedule</option>
+            <option value="append">Append to existing schedule</option>
+          </select>
+          <button id="genSchedule" class="primary">Generate</button>
+          <button id="clearSchedule" class="danger">Clear Schedule</button>
+        </div>
+        <div class="hint">Round-robin generator. Game numbers are assigned automatically. For odd team counts, one team has a bye each round.</div>
+      </div>
+
+</section>
+
+
+    <section class="panel" id="standings">
+      <div class="card">
+        <h2>Standings</h2>
+        <div class="row">
+          <button id="recalcStandings" class="primary">Recalculate</button>
+          <span class="small">Standings update automatically when scheduled games are simulated.</span>
+        </div>
+        <div class="tableWrap"><table id="standingsTable"></table></div>
+      </div>
+    </section>
+
+
+    <section class="panel" id="stats">
+      <div class="card">
+        <h2>Season Batting Stats</h2>
+
+      <div class="card" style="margin:12px 0">
+        <h2>Exports</h2>
+        <div class="row">
+          <button id="exportSeasonCsv" class="primary">Download Season Stats (CSV)</button>
+          <button id="exportScheduleCsv">Download Schedule / Results (CSV)</button>
+          <button id="exportBoxscoresCsv">Download Game Boxscores (CSV)</button>
+        </div>
+        <div class="hint">CSV opens in Excel and imports cleanly into Google Sheets.</div>
+      </div>
+        <div class="row">
+          <label>Team</label><select id="statsTeam"></select>
+          <button id="resetStats" class="danger">Reset Season</button>
+        </div>
+        <div class="tableWrap"><table id="battingTable"></table></div>
+      </div>
+    
+      <div class="card" style="margin-top:12px">
+        <h2>League Leaders</h2>
+        <div class="grid2">
+          <div class="card" style="background:#0b1229">
+            <h3 class="h3">Batting</h3>
+            <div class="row">
+              <label>Category</label>
+              <select id="leadBatCat">
+                <option value="AB">AB</option>
+                <option value="H">Hits</option>
+                <option value="HR">HR</option>
+                <option value="RBI">RBI</option>
+                <option value="AVG">Avg</option>
+              </select>
+              <label>Top</label>
+              <select id="leadTopN">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="15">15</option>
+              </select>
+            </div>
+            <div class="tableWrap"><table id="leadBatTable"></table></div>
+          </div>
+
+          <div class="card" style="background:#0b1229">
+            <h3 class="h3">Pitching</h3>
+            <div class="row">
+              <label>Category</label>
+              <select id="leadPitCat">
+                <option value="W">W</option>
+                <option value="L">L</option>
+                <option value="SV">SV</option>
+                <option value="SO">SO</option>
+                <option value="ERA">ERA</option>
+              </select>
+            </div>
+            <div class="tableWrap"><table id="leadPitTable"></table></div>
+            <div class="hint">ERA leader = lowest ERA (min 1 out recorded).</div>
+          </div>
+        </div>
+      </div>
+
+</section>
+
+
+    <section class="panel" id="pitching">
+      <div class="card">
+        <h2>Season Pitching Stats</h2>
+        <div class="row">
+          <label>Team</label><select id="pitchTeam"></select>
+        </div>
+        <div class="tableWrap"><table id="pitchTable"></table></div>
+        <div class="hint">Pitchers do NOT change outcomes. v4.3 only tracks stats to the active pitcher.</div>
+      </div>
+    </section>
+
+
+    <section class="panel" id="backup">
+      <div class="card">
+        <h2>Backup</h2>
+        <div class="row">
+          <button id="exportJson" class="primary">Export JSON</button>
+          <input id="importFile" type="file" accept=".json" />
+          <button id="importJson">Import JSON</button>
+        </div>
+        <div class="hint">
+          Data saves locally on your PC automatically. Export is your “backup file.”
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal" id="lineupModal" aria-hidden="true">
+    <div class="modalCard">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Edit Lineups (This Game)</h2>
+        <button id="closeModal">Close</button>
+      </div>
+      <div class="hint">Drag to reorder. This does not change saved lineups in League tab.</div>
+      <div class="grid2">
+        <div class="card" style="background:#0b1229">
+          <h3 class="h3" id="modalAwayName">Away</h3>
+          <ol id="modalAwayList" class="dndList"></ol>
+        </div>
+        <div class="card" style="background:#0b1229">
+          <h3 class="h3" id="modalHomeName">Home</h3>
+          <ol id="modalHomeList" class="dndList"></ol>
+        </div>
+      
+      <div class="hint">Bench subs: click a bench player then click a lineup spot to swap (or click a lineup spot first). Lineup stays 1–9.</div>
+      <div class="grid2">
+        <div class="card" style="background:#0b1229">
+          <h3 class="h3" id="modalBenchAwayTitle">Away Bench</h3>
+          <ul id="modalBenchAwayList" class="list"></ul>
+        </div>
+        <div class="card" style="background:#0b1229">
+          <h3 class="h3" id="modalBenchHomeTitle">Home Bench</h3>
+          <ul id="modalBenchHomeList" class="list"></ul>
+        </div>
+      </div>
+</div>
+      <div class="row" style="justify-content:flex-end">
+        <button id="modalSave" class="primary">Save Changes</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal" id="pitchModal" aria-hidden="true">
+    <div class="modalCard">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Edit Pitchers (This Game)</h2>
+        <button id="closePitchModal">Close</button>
+      </div>
+      <div class="hint">Pick the active pitcher for each team. Pitchers do NOT affect outcomes.</div>
+      <div class="grid2">
+        <div class="card" style="background:#0b1229">
+          <h3 class="h3" id="pitchAwayName">Away</h3>
+          <div class="row"><label>Pitcher</label><select id="pitchAwaySelect"></select></div>
+        </div>
+        <div class="card" style="background:#0b1229">
+          <h3 class="h3" id="pitchHomeName">Home</h3>
+          <div class="row"><label>Pitcher</label><select id="pitchHomeSelect"></select></div>
+        </div>
+      </div>
+      <div class="row" style="justify-content:flex-end">
+        <button id="pitchSave" class="primary">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+
+  <script src="app.js?v=5.8.5"></script>
+
+  <div class="modal" id="playerEditModal" aria-hidden="true">
+    <div class="modalCard">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0" id="peTitle">Edit Player</h2>
+        <button id="peClose">Close</button>
+      </div>
+
+      <div class="hint" id="peHint">Editing a player updates names/ratings everywhere without resetting stats.</div>
+
+      <div class="grid2">
+        <div class="card" style="background:#0b1229">
+          <h3 class="h3">Details</h3>
+          <div class="row">
+            <label>Name</label>
+            <input id="peName" placeholder="Player name" />
+          </div>
+
+          <div id="peBatterFields">
+            <div class="row">
+              <label>Pos</label>
+              <input id="pePos" placeholder="SS" style="max-width:120px" />
+              <label>BA Tier</label>
+              <select id="peTier"></select>
+            </div>
+            <div class="row">
+              <label>HR</label>
+              <select id="peHr">
+                <option value="lt20">&lt; 20 HR</option>
+                <option value="ge20">20+ HR</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="pePitcherFields" class="hidden">
+            <div class="row">
+              <label>Role</label>
+              <select id="peRole">
+                <option value="SP">SP</option>
+                <option value="RP">RP</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row" style="justify-content:flex-end; margin-top:10px">
+            <button id="peSave" class="primary">Save Changes</button>
+          </div>
+        </div>
+
+        <div class="card" style="background:#0b1229">
+          <h3 class="h3">Preview</h3>
+          <div class="pill" id="pePreviewPill"><b>Player</b></div>
+          <div class="hint" id="pePreviewHint"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -764,7 +764,11 @@ function renderPlay(){
     el("log").textContent="";
     el("b1").classList.remove("on"); el("b2").classList.remove("on"); el("b3").classList.remove("on");
     el("batter").textContent="-"; el("tier").textContent="-"; el("hr").textContent="-";
-    if(el("startGame")) el("startGame").textContent = (game && isSeasonGame(game)) ? "Start / Continue (Season)" : "Start Game";
+    if(el("startGame")){
+    if(game && isSeasonGame(game) && !game.final) el("startGame").textContent = "Start / Continue (Season)";
+    else if(game && !game.final) el("startGame").textContent = "Continue Game";
+    else el("startGame").textContent = "Start Game";
+  }
   updateScoreboardUI();
     return;
   }
@@ -787,7 +791,11 @@ function renderPlay(){
   el("tier").textContent=tierLabel(batter?.tier ?? "");
   el("hr").textContent=hrLabel(batter?.hr ?? "lt20");
   el("log").textContent=game.log.join("\n");
-  if(el("startGame")) el("startGame").textContent = (game && isSeasonGame(game)) ? "Start / Continue (Season)" : "Start Game";
+  if(el("startGame")){
+    if(game && isSeasonGame(game) && !game.final) el("startGame").textContent = "Start / Continue (Season)";
+    else if(game && !game.final) el("startGame").textContent = "Continue Game";
+    else el("startGame").textContent = "Start Game";
+  }
   updateScoreboardUI();
 }
 
@@ -1886,5 +1894,18 @@ function exportBoxscoresCsv(){
   }
   downloadText("BHBL_Boxscores.csv", toCsv(rows));
 }
+
+
+window.onerror = function(message, source, lineno, colno, error){
+  try{
+    console.error("BHBL Error:", message, source, lineno, colno, error);
+    if(typeof pushTicker==="function"){
+      pushTicker("App error: " + message + " (see console)");
+    } else {
+      alert("App error: " + message);
+    }
+  }catch(e){}
+  return false;
+};
 
 

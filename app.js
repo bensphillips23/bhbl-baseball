@@ -816,6 +816,10 @@ function renderPitchers(){
     const row=document.createElement("div");
     row.className="row";
     row.innerHTML = `<div class="pill"><b>${p.name}</b> (${p.role})</div>`;
+    const edit=document.createElement("button");
+    edit.textContent="Edit";
+    edit.onclick=()=>openPlayerEdit("pitcher", team.id, p.id);
+
     const del=document.createElement("button");
     del.className="danger"; del.textContent="Remove";
     del.onclick=()=>{
@@ -828,6 +832,7 @@ function renderPitchers(){
       renderPitching();
       renderPlayPitcherSelectors();
     };
+    row.appendChild(edit);
     row.appendChild(del);
     list.appendChild(row);
   }
@@ -871,6 +876,10 @@ function renderRoster(){
     const row=document.createElement("div");
     row.className="row";
     row.innerHTML = `<div class="pill"><b>${p.name}</b> (${p.pos})</div><div class="small">${tierLabel(p.tier)} · ${hrLabel(p.hr)}</div>`;
+    const edit=document.createElement("button");
+    edit.textContent="Edit";
+    edit.onclick=()=>openPlayerEdit("batter", team.id, p.id);
+
     const del=document.createElement("button");
     del.className="danger"; del.textContent="Remove";
     del.onclick=()=>{
@@ -883,6 +892,7 @@ function renderRoster(){
       renderLineupEditor();
       renderPlay();
     };
+    row.appendChild(edit);
     row.appendChild(del);
     div.appendChild(row);
   }
@@ -1268,6 +1278,124 @@ function simulateScheduledGame(gameObj){
   gameObj.playedAt=new Date().toISOString();
   saveState();
   return {homeScore:g.score.home, awayScore:g.score.away};
+}
+
+
+let peCtx = null; // {kind:"batter"|"pitcher", teamId, id}
+
+function openPlayerEdit(kind, teamId, id){
+  const team = getTeam(teamId);
+  if(!team) return;
+  peCtx = {kind, teamId, id};
+
+  // Populate tier options from main tier select (single source of truth)
+  const tierSel = el("peTier");
+  if(tierSel){
+    tierSel.innerHTML = el("playerTier") ? el("playerTier").innerHTML : tierSel.innerHTML;
+  }
+
+  let obj = null;
+  if(kind==="batter") obj = (team.roster||[]).find(p=>p.id===id);
+  else obj = (team.pitchers||[]).find(p=>p.id===id);
+  if(!obj) return;
+
+  el("peTitle").textContent = kind==="batter" ? `Edit Batter — ${team.name}` : `Edit Pitcher — ${team.name}`;
+  el("peName").value = obj.name || "";
+  el("pePreviewPill").innerHTML = `<b>${obj.name||"Player"}</b>`;
+  el("pePreviewHint").textContent = "";
+
+  const batterBox = el("peBatterFields");
+  const pitBox = el("pePitcherFields");
+  if(kind==="batter"){
+    batterBox?.classList.remove("hidden");
+    pitBox?.classList.add("hidden");
+    el("pePos").value = obj.pos || "";
+    if(el("peTier")) el("peTier").value = obj.tier || "C";
+    if(el("peHr")) el("peHr").value = obj.hr || "lt20";
+    el("pePreviewHint").textContent = `${tierLabel(el("peTier").value)} · ${hrLabel(el("peHr").value)} · (${el("pePos").value||"NA"})`;
+  } else {
+    batterBox?.classList.add("hidden");
+    pitBox?.classList.remove("hidden");
+    if(el("peRole")) el("peRole").value = obj.role || "SP";
+    el("pePreviewHint").textContent = `Role: ${el("peRole").value}`;
+  }
+
+  const modal = el("playerEditModal");
+  modal.classList.add("show");
+  modal.setAttribute("aria-hidden","false");
+}
+
+function closePlayerEdit(){
+  const modal = el("playerEditModal");
+  modal.classList.remove("show");
+  modal.setAttribute("aria-hidden","true");
+  peCtx = null;
+}
+
+function savePlayerEdit(){
+  if(!peCtx) return closePlayerEdit();
+  const team = getTeam(peCtx.teamId);
+  if(!team) return closePlayerEdit();
+
+  if(peCtx.kind==="batter"){
+    const p = (team.roster||[]).find(x=>x.id===peCtx.id);
+    if(!p) return closePlayerEdit();
+    p.name = el("peName").value.trim() || p.name;
+    p.pos = (el("pePos").value.trim() || p.pos || "NA").toUpperCase();
+    p.tier = el("peTier").value;
+    p.hr = el("peHr").value;
+    // ensure season stat objects exist (do not reset)
+    if(state.season?.batting) ensureBat(p.id);
+    saveState();
+    renderRoster();
+    renderLineupEditor();
+    renderPlay();
+    renderStats();
+  } else {
+    const p = (team.pitchers||[]).find(x=>x.id===peCtx.id);
+    if(!p) return closePlayerEdit();
+    p.name = el("peName").value.trim() || p.name;
+    p.role = el("peRole").value;
+    if(state.season?.pitching) ensurePitch(p.id);
+    // if default SP but role changed away from SP, keep id but user can change default SP
+    saveState();
+    renderPitchers();
+    renderPlay();
+    renderStats();
+  }
+
+  closePlayerEdit();
+}
+
+function wirePlayerEditModal(){
+  if(el("peClose")) el("peClose").onclick = closePlayerEdit;
+  if(el("peSave")) el("peSave").onclick = savePlayerEdit;
+
+  const preview = ()=>{
+    if(!peCtx) return;
+    const name = el("peName").value.trim() || "Player";
+    el("pePreviewPill").innerHTML = `<b>${name}</b>`;
+    if(peCtx.kind==="batter"){
+      const pos = (el("pePos").value.trim() || "NA").toUpperCase();
+      const tier = el("peTier").value;
+      const hr = el("peHr").value;
+      el("pePreviewHint").textContent = `${tierLabel(tier)} · ${hrLabel(hr)} · (${pos})`;
+    } else {
+      el("pePreviewHint").textContent = `Role: ${el("peRole").value}`;
+    }
+  };
+  ["peName","pePos","peTier","peHr","peRole"].forEach(id=>{
+    if(el(id)) el(id).addEventListener("input", preview);
+    if(el(id)) el(id).addEventListener("change", preview);
+  });
+
+  // close when clicking backdrop
+  const modal = el("playerEditModal");
+  if(modal){
+    modal.addEventListener("click", (e)=>{
+      if(e.target===modal) closePlayerEdit();
+    });
+  }
 }
 
 // Modal

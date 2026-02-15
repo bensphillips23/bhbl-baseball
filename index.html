@@ -406,5 +406,62 @@
 
 
   <script src="app.js"></script>
+
+  <div class="modal" id="playerEditModal" aria-hidden="true">
+    <div class="modalCard">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0" id="peTitle">Edit Player</h2>
+        <button id="peClose">Close</button>
+      </div>
+
+      <div class="hint" id="peHint">Editing a player updates names/ratings everywhere without resetting stats.</div>
+
+      <div class="grid2">
+        <div class="card" style="background:#0b1229">
+          <h3 class="h3">Details</h3>
+          <div class="row">
+            <label>Name</label>
+            <input id="peName" placeholder="Player name" />
+          </div>
+
+          <div id="peBatterFields">
+            <div class="row">
+              <label>Pos</label>
+              <input id="pePos" placeholder="SS" style="max-width:120px" />
+              <label>BA Tier</label>
+              <select id="peTier"></select>
+            </div>
+            <div class="row">
+              <label>HR</label>
+              <select id="peHr">
+                <option value="lt20">&lt; 20 HR</option>
+                <option value="ge20">20+ HR</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="pePitcherFields" class="hidden">
+            <div class="row">
+              <label>Role</label>
+              <select id="peRole">
+                <option value="SP">SP</option>
+                <option value="RP">RP</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row" style="justify-content:flex-end; margin-top:10px">
+            <button id="peSave" class="primary">Save Changes</button>
+          </div>
+        </div>
+
+        <div class="card" style="background:#0b1229">
+          <h3 class="h3">Preview</h3>
+          <div class="pill" id="pePreviewPill"><b>Player</b></div>
+          <div class="hint" id="pePreviewHint"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

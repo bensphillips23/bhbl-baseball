@@ -1,3 +1,4 @@
+const APP_VERSION = "5.8.4";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -1548,6 +1549,7 @@ function initDnD(){
 }
 
 function init(){
+  if(el("appVersion")) el("appVersion").textContent = "v"+APP_VERSION;
   wireTabs();
   renderTeamsAll();
   fillTierSelect(el("playerTier"));

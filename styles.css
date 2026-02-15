@@ -148,3 +148,14 @@ tr.leader td{font-weight:700;color:#dcfce7}
   line-height: 1;
   cursor: pointer;
 }
+
+.ver{
+  display:inline-block;
+  font-size:12px;
+  font-weight:800;
+  opacity:0.75;
+  padding:2px 8px;
+  border:1px solid rgba(255,255,255,0.12);
+  border-radius:999px;
+  margin-left:8px;
+}

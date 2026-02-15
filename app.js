@@ -764,7 +764,8 @@ function renderPlay(){
     el("log").textContent="";
     el("b1").classList.remove("on"); el("b2").classList.remove("on"); el("b3").classList.remove("on");
     el("batter").textContent="-"; el("tier").textContent="-"; el("hr").textContent="-";
-    updateScoreboardUI();
+    if(el("startGame")) el("startGame").textContent = (game && isSeasonGame(game)) ? "Start / Continue (Season)" : "Start Game";
+  updateScoreboardUI();
     return;
   }
   el("inning").textContent=String(game.inning);
@@ -786,6 +787,7 @@ function renderPlay(){
   el("tier").textContent=tierLabel(batter?.tier ?? "");
   el("hr").textContent=hrLabel(batter?.hr ?? "lt20");
   el("log").textContent=game.log.join("\n");
+  if(el("startGame")) el("startGame").textContent = (game && isSeasonGame(game)) ? "Start / Continue (Season)" : "Start Game";
   updateScoreboardUI();
 }
 
@@ -1422,6 +1424,27 @@ function init(){
   el("awayTeam").onchange=renderPlayPitcherSelectors;
 
   el("startGame").onclick=()=>{
+    // If a scheduled/season game is already loaded, do NOT overwrite it.
+    if(game && isSeasonGame(game)){
+      // Allow setting pitchers from the dropdowns, then play.
+      const homeId = game.homeId;
+      const awayId = game.awayId;
+      const hp = el("homePitcher")?.value || game.pitcher.home || getTeam(homeId)?.defaultSPId || "";
+      const ap = el("awayPitcher")?.value || game.pitcher.away || getTeam(awayId)?.defaultSPId || "";
+      game.pitcher.home = hp;
+      game.pitcher.away = ap;
+      notePitcherEntry("home", game.pitcher.home);
+      notePitcherEntry("away", game.pitcher.away);
+      if(!game.started){
+        game.started = true;
+        addLog(game,`Season game started: Game ${game.seasonLink?.gameNo ?? ""}. Home P: ${getPitcher(homeId, hp)?.name || "none"} | Away P: ${getPitcher(awayId, ap)?.name || "none"}`);
+      }
+      saveState();
+      renderPlay();
+      return;
+    }
+
+    // Play Mode: start a new exhibition game (no season stats)
     const homeId=el("homeTeam").value;
     const awayId=el("awayTeam").value;
     if(homeId===awayId) return alert("Pick two different teams.");

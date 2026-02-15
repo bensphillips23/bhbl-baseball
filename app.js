@@ -152,6 +152,30 @@ function notePitcherEntry(teamSide, pid){
       half: game.half
     };
   }
+
+
+function isSeasonGame(g){
+  return !!(g && g.seasonLink && g.seasonLink.scheduleId);
+}
+function batStore(g, pid){
+  if(isSeasonGame(g)){
+    ensureBat(pid);
+    return state.season.batting[pid];
+  } else {
+    ensureGameBat(pid);
+    return g.box.batting[pid];
+  }
+}
+function pitchStore(g, pid){
+  if(isSeasonGame(g)){
+    ensurePitch(pid);
+    return state.season.pitching[pid];
+  } else {
+    ensureGamePitch(pid);
+    return g.box.pitching[pid];
+  }
+}
+
 }
 
 function recordRunEvent(){
@@ -610,6 +634,8 @@ function endHalf(g){
 function creditRun(pid){ if(!pid) return; ensureBat(pid); state.season.batting[pid].R += 1; }
 function rbi(bid){ if(!bid) return; ensureBat(bid); state.season.batting[bid].RBI += 1; }
 function scoreRun(g, bid){
+  // Rule (simplified): if the 3rd out is made on this play, no runs score.
+  if(g && g._outsBeforePlay===2 && g.outs>=3) return;
   const side = battingSide(g);
   g.score[side] += 1;
   recordRunEvent();
@@ -656,10 +682,12 @@ function fcLeadOut(g, bid){
 }
 
 function apply(code, roll){
+  const g=game;
   const bid=batterId(game);
   const batter=getPlayer(bid);
-  ensureBat(bid);
-  const s=state.season.batting[bid];
+  // snapshot outs at start of play (for 3rd-out run rule)
+  g._outsBeforePlay = g.outs;
+  const s = batStore(g, bid);
 
   if(code==="BB") { s.BB += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → WALK`); walkAdvance(game, bid); nextBatter(game); return; }
   if(code==="K") { s.AB += 1; s.SO += 1; game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → STRIKEOUT`); nextBatter(game); return; }
@@ -1096,9 +1124,8 @@ function creditPitchFromCode(g, code){
   }
   const pid = currentPitcherId(g);
   if(!pid) return;
-  ensurePitch(pid);
-  const ps = state.season.pitching[pid];
-  const gps = (g===game) ? (ensureGamePitch(pid), game.box.pitching[pid]) : null;
+  const ps = pitchStore(g, pid);
+  const gps = null;
 
   if(code==="BB"){ ps.BB += 1; if(gps) gps.BB += 1; return; }
   if(code==="K"){ ps.SO += 1; ps.OUTS += 1; if(gps){ gps.SO += 1; gps.OUTS += 1; } if(g.decision){ g.decision.pitchOuts[pid]=(g.decision.pitchOuts[pid]||0)+1; } return; }
@@ -1115,19 +1142,14 @@ function creditPitchFromCode(g, code){
 function doRoll(){
   if(!game) return;
   if(game.final) return alert("Game is final. Start a new game or load the next scheduled game.");
-    // Rule: no runs score on the 3rd out (simplified)
-  if(thirdOutNoRun && game.outs >= 3){
-    game.score.away = scoreBefore.away;
-    game.score.home = scoreBefore.home;
-  }
-if(game.outs>=3) endHalf(game);
+  if(game.outs>=3) endHalf(game);
 
   const bid=batterId(game);
   const batter=getPlayer(bid);
   const roll=roll2d6();
   const code=CHARTS[batter.hr]?.[batter.tier]?.[roll.total];
   triggerPlayFX(code);
-  if(!code) { addLog(game, `Rolled ${roll.total} but chart missing for tier/hr.`); return; }
+  if(!code) { addLog(game, `Rolled ${roll.total} [${roll.d1}+${roll.d2}] but chart missing for tier/hr.`); return; }
 
   apply(code, roll);
   creditPitchFromCode(game, code);
@@ -1136,6 +1158,7 @@ if(game.outs>=3) endHalf(game);
   saveState();
   renderPlay();
 }
+
 function simHalf(){
   simFast = true;
   if(!game) return;
@@ -1176,6 +1199,7 @@ function startSeasonGameFromSchedule(sched){
 
 function finalizeSeasonGame(){
   if(!game) return alert("No active game.");
+  if(!isSeasonGame(game)) return alert("This is a Play Mode game (not scheduled). Season stats are not recorded—schedule it first.");
   if(!game.final){
     if(!confirm("Game is not final (may be tied). Finalize anyway?")) return;
   }

@@ -1115,7 +1115,12 @@ function creditPitchFromCode(g, code){
 function doRoll(){
   if(!game) return;
   if(game.final) return alert("Game is final. Start a new game or load the next scheduled game.");
-  if(game.outs>=3) endHalf(game);
+    // Rule: no runs score on the 3rd out (simplified)
+  if(thirdOutNoRun && game.outs >= 3){
+    game.score.away = scoreBefore.away;
+    game.score.home = scoreBefore.home;
+  }
+if(game.outs>=3) endHalf(game);
 
   const bid=batterId(game);
   const batter=getPlayer(bid);

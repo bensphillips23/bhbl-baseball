@@ -1348,7 +1348,6 @@ function savePlayerEdit(){
     if(state.season?.batting) ensureBat(p.id);
     saveState();
     renderRoster();
-    renderLineupEditor();
     renderPlay();
     renderStats();
   } else {
@@ -1552,27 +1551,42 @@ function init(){
   el("awayTeam").onchange=renderPlayPitcherSelectors;
 
   el("startGame").onclick=()=>{
-    // If a scheduled/season game is already loaded, do NOT overwrite it.
-    if(game && isSeasonGame(game)){
-      // Allow setting pitchers from the dropdowns, then play.
+    // If a game is already loaded and not final, do NOT overwrite it.
+    if(game && !game.final){
+      // Season game: allow setting pitchers, mark started, then play
+      if(isSeasonGame(game)){
+        const homeId = game.homeId;
+        const awayId = game.awayId;
+        const hp = el("homePitcher")?.value || game.pitcher.home || getTeam(homeId)?.defaultSPId || "";
+        const ap = el("awayPitcher")?.value || game.pitcher.away || getTeam(awayId)?.defaultSPId || "";
+        game.pitcher.home = hp;
+        game.pitcher.away = ap;
+        notePitcherEntry("home", game.pitcher.home);
+        notePitcherEntry("away", game.pitcher.away);
+        if(!game.started){
+          game.started = true;
+          addLog(game,`Season game started: Game ${game.seasonLink?.gameNo ?? ""}.`);
+        }
+        saveState();
+        renderPlay();
+        return;
+      }
+
+      // Play Mode game already loaded: just continue / update pitchers
       const homeId = game.homeId;
       const awayId = game.awayId;
-      const hp = el("homePitcher")?.value || game.pitcher.home || getTeam(homeId)?.defaultSPId || "";
-      const ap = el("awayPitcher")?.value || game.pitcher.away || getTeam(awayId)?.defaultSPId || "";
+      const hp = el("homePitcher")?.value || game.pitcher.home || "";
+      const ap = el("awayPitcher")?.value || game.pitcher.away || "";
       game.pitcher.home = hp;
       game.pitcher.away = ap;
       notePitcherEntry("home", game.pitcher.home);
       notePitcherEntry("away", game.pitcher.away);
-      if(!game.started){
-        game.started = true;
-        addLog(game,`Season game started: Game ${game.seasonLink?.gameNo ?? ""}. Home P: ${getPitcher(homeId, hp)?.name || "none"} | Away P: ${getPitcher(awayId, ap)?.name || "none"}`);
-      }
       saveState();
       renderPlay();
       return;
     }
 
-    // Play Mode: start a new exhibition game (no season stats)
+    // Otherwise start a new Play Mode (exhibition) game
     const homeId=el("homeTeam").value;
     const awayId=el("awayTeam").value;
     if(homeId===awayId) return alert("Pick two different teams.");
@@ -1581,7 +1595,7 @@ function init(){
     game.pitcher.away = el("awayPitcher")?.value || getTeam(awayId)?.defaultSPId || "";
     notePitcherEntry("home", game.pitcher.home);
     notePitcherEntry("away", game.pitcher.away);
-    addLog(game,`Game started. Home P: ${getPitcher(homeId, game.pitcher.home)?.name || "none"} | Away P: ${getPitcher(awayId, game.pitcher.away)?.name || "none"}`);
+    addLog(game,`Game started.`);
     saveState();
     renderPlay();
   };

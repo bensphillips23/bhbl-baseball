@@ -1,4 +1,4 @@
-const APP_VERSION = "5.8.6";
+const APP_VERSION = "5.8.7";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 

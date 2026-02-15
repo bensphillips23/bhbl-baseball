@@ -532,17 +532,17 @@ function updateScoreboardUI(){
   el("sbHome").classList.toggle("active", batting==="home" && !game.final);
   el("sbAway").classList.toggle("active", batting==="away" && !game.final);
 
-  el("d1")?.classList.toggle("occ", !!game.bases?.b1);
-  el("d2")?.classList.toggle("occ", !!game.bases?.b2);
-  el("d3")?.classList.toggle("occ", !!game.bases?.b3);
-
-  const hp = getPitcher(game.homeId, game.pitcher?.home)?.name;
+  el("d1")?.classList.toggle("occ", !!game.bases?.[0]);
+  el("d2")?.classList.toggle("occ", !!game.bases?.[1]);
+  el("d3")?.classList.toggle("occ", !!game.bases?.[2]);
+const hp = getPitcher(game.homeId, game.pitcher?.home)?.name;
   const ap = getPitcher(game.awayId, game.pitcher?.away)?.name;
   el("sbNote").textContent = (hp||ap) ? `P: ${ap||"?"} / ${hp||"?"}` : "";
 }
 
 function triggerPlayFX(code){
   if(simFast) return;
+  if(!code) return;
   const sb = el("scoreboardSticky");
   if(!sb) return;
   sb.classList.remove("playFX-good","playFX-hr","playFX-bad");
@@ -1103,6 +1103,7 @@ function doRoll(){
   const batter=getPlayer(bid);
   const roll=roll2d6();
   const code=CHARTS[batter.hr]?.[batter.tier]?.[roll.total];
+  triggerPlayFX(code);
   if(!code) { addLog(game, `Rolled ${roll.total} but chart missing for tier/hr.`); return; }
 
   apply(code, roll);

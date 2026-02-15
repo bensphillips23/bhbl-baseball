@@ -1,4 +1,4 @@
-const APP_VERSION = "5.9.0";
+const APP_VERSION = "5.9.1";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -791,6 +791,71 @@ function renderTeamsAll(){
   fillTeamSelect(el("lineupTeam"));
 }
 
+
+function makePlayerLink(pid, label){
+  const name = label || getPlayer(pid)?.name || "Player";
+  return `<span class="pLink" data-pid="${pid}">${escapeHtml(name)}</span>`;
+}
+
+function renderLiveBox(){
+  const boxEl = el("liveBox");
+  const card = el("liveBoxCard");
+  if(!boxEl || !card) return;
+  if(!game){
+    boxEl.innerHTML = '<div class="hint">No active game.</div>';
+    return;
+  }
+  const home = getTeam(game.homeId);
+  const away = getTeam(game.awayId);
+  const b = (game.box && game.box.batting) ? game.box.batting : {};
+  const p = (game.box && game.box.pitching) ? game.box.pitching : {};
+  const batCols = ["AB","H","HR","RBI","R","BB","SO"];
+  const pitCols = ["IP","H","R","ER","HR","BB","SO"];
+
+  const batTable = (teamId, title)=>{
+    const lineup = getLineup(teamId) || [];
+    const rows = lineup.map(pid=>{
+      const s = b[pid] || {AB:0,H:0,HR:0,RBI:0,R:0,BB:0,SO:0};
+      return `<tr><td>${makePlayerLink(pid)}</td>${batCols.map(k=>`<td>${s[k]||0}</td>`).join("")}</tr>`;
+    }).join("");
+    return `<div class="hint" style="margin:8px 0 4px">${escapeHtml(title)}</div>
+      <table class="liveTbl">
+        <thead><tr><th>Batting</th>${batCols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>
+        <tbody>${rows || `<tr><td colspan="${1+batCols.length}" class="hint">No lineup</td></tr>`}</tbody>
+      </table>`;
+  };
+
+  const pitTable = (teamId, title)=>{
+    const pitchers = (getTeam(teamId)?.pitchers)||[];
+    const rows = pitchers.map(pp=>{
+      const s = p[pp.id] || {OUTS:0,H:0,R:0,ER:0,HR:0,BB:0,SO:0};
+      const ip = outsToIP(s.OUTS||0);
+      return `<tr>
+        <td>${makePlayerLink(pp.id, pp.name)}</td>
+        <td>${ip}</td>
+        <td>${s.H||0}</td>
+        <td>${s.R||0}</td>
+        <td>${s.ER||0}</td>
+        <td>${s.HR||0}</td>
+        <td>${s.BB||0}</td>
+        <td>${s.SO||0}</td>
+      </tr>`;
+    }).join("");
+    return `<div class="hint" style="margin:10px 0 4px">${escapeHtml(title)}</div>
+      <table class="liveTbl">
+        <thead><tr><th>Pitching</th>${pitCols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>
+        <tbody>${rows || `<tr><td colspan="${1+pitCols.length}" class="hint">No pitchers</td></tr>`}</tbody>
+      </table>`;
+  };
+
+  boxEl.innerHTML = `
+    ${batTable(game.awayId, away?.name || "Away")}
+    ${pitTable(game.awayId, (away?.name||"Away")+" Pitching")}
+    ${batTable(game.homeId, home?.name || "Home")}
+    ${pitTable(game.homeId, (home?.name||"Home")+" Pitching")}
+  `;
+}
+
 function renderPlayPitcherSelectors(){
   const homeId=el("homeTeam").value;
   const awayId=el("awayTeam").value;
@@ -832,6 +897,7 @@ function renderPlay(){
     else el("startGame").textContent = "Start Game";
   }
   updateScoreboardUI();
+  renderLiveBox();
     return;
   }
   el("inning").textContent=String(game.inning);
@@ -859,6 +925,7 @@ function renderPlay(){
     else el("startGame").textContent = "Start Game";
   }
   updateScoreboardUI();
+  renderLiveBox();
 }
 
 
@@ -1610,6 +1677,90 @@ function initDnD(){
   makeDndList(el("modalBenchHomeList"));
 }
 
+
+function statBox(label, value){
+  return `<div class="statBox"><b>${escapeHtml(label)}</b><span>${escapeHtml(String(value ?? 0))}</span></div>`;
+}
+
+function openPlayerCard(pid){
+  const modal = el("playerCardModal");
+  if(!modal) return;
+  const pl = getPlayer(pid);
+  if(!pl) return;
+
+  el("pcName").textContent = pl.name || "Player";
+  const team = (state.teams||[]).find(t=> (t.roster||[]).some(x=>x.id===pid) || (t.pitchers||[]).some(x=>x.id===pid));
+  el("pcTeam").textContent = team ? team.name : "";
+
+  const sb = (state.season && state.season.batting) ? state.season.batting[pid] : null;
+  const sp = (state.season && state.season.pitching) ? state.season.pitching[pid] : null;
+
+  let seasonHtml = "";
+  if(sb){
+    const avg = sb.AB ? (sb.H/sb.AB) : 0;
+    seasonHtml += `<div class="hint">Batting</div>
+      <div class="statGrid">
+        ${statBox("AB", sb.AB)}${statBox("H", sb.H)}${statBox("HR", sb.HR)}${statBox("RBI", sb.RBI)}
+        ${statBox("R", sb.R)}${statBox("BB", sb.BB)}${statBox("SO", sb.SO)}${statBox("AVG", avg.toFixed(3))}
+      </div>`;
+  }
+  if(sp){
+    const ip = outsToIP(sp.OUTS||0);
+    const era = (sp.OUTS ? ((sp.ER||0)*27/(sp.OUTS||1)) : 0);
+    seasonHtml += `<div class="hint" style="margin-top:10px">Pitching</div>
+      <div class="statGrid">
+        ${statBox("W", sp.W)}${statBox("L", sp.L)}${statBox("SV", sp.SV)}${statBox("SO", sp.SO)}
+        ${statBox("IP", ip)}${statBox("H", sp.H)}${statBox("R", sp.R)}${statBox("ERA", era.toFixed(2))}
+      </div>`;
+  }
+  if(!seasonHtml) seasonHtml = `<div class="hint">No season stats yet.</div>`;
+  el("pcSeason").innerHTML = seasonHtml;
+
+  let gameHtml = "";
+  if(game && game.box){
+    const gb = (game.box.batting||{})[pid];
+    const gp = (game.box.pitching||{})[pid];
+    if(gb){
+      const avg = gb.AB ? (gb.H/gb.AB) : 0;
+      gameHtml += `<div class="hint">Batting</div>
+        <div class="statGrid">
+          ${statBox("AB", gb.AB)}${statBox("H", gb.H)}${statBox("HR", gb.HR)}${statBox("RBI", gb.RBI)}
+          ${statBox("R", gb.R)}${statBox("BB", gb.BB)}${statBox("SO", gb.SO)}${statBox("AVG", avg.toFixed(3))}
+        </div>`;
+    }
+    if(gp){
+      const ip = outsToIP(gp.OUTS||0);
+      const era = (gp.OUTS ? ((gp.ER||0)*27/(gp.OUTS||1)) : 0);
+      gameHtml += `<div class="hint" style="margin-top:10px">Pitching</div>
+        <div class="statGrid">
+          ${statBox("OUTS", gp.OUTS)}${statBox("IP", ip)}${statBox("SO", gp.SO)}${statBox("BB", gp.BB)}
+          ${statBox("H", gp.H)}${statBox("R", gp.R)}${statBox("ER", gp.ER)}${statBox("ERA", era.toFixed(2))}
+        </div>`;
+    }
+  }
+  if(!gameHtml) gameHtml = `<div class="hint">Not in current game.</div>`;
+  el("pcGame").innerHTML = gameHtml;
+
+  el("pcNote").textContent = "Player cards show season totals and current-game box score.";
+  modal.classList.add("show");
+  modal.setAttribute("aria-hidden","false");
+}
+
+function closePlayerCard(){
+  const modal = el("playerCardModal");
+  if(!modal) return;
+  modal.classList.remove("show");
+  modal.setAttribute("aria-hidden","true");
+}
+
+function wirePlayerCard(){
+  if(el("pcClose")) el("pcClose").onclick = closePlayerCard;
+  const modal = el("playerCardModal");
+  if(modal){
+    modal.addEventListener("click", (e)=>{ if(e.target===modal) closePlayerCard(); });
+  }
+}
+
 function init(){
   if(el("appVersion")) el("appVersion").textContent = "v"+APP_VERSION;
   wireTabs();
@@ -1971,3 +2122,10 @@ window.onerror = function(message, source, lineno, colno, error){
 };
 
 
+
+document.addEventListener("click", (e)=>{
+  const t = e.target;
+  if(t && t.getAttribute && t.getAttribute("data-pid")){
+    openPlayerCard(t.getAttribute("data-pid"));
+  }
+});

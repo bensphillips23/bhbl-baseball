@@ -6,7 +6,7 @@
   <title>BHBL Dice Baseball</title>
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#0b1020" />
-  <link rel="stylesheet" href="styles.css?v=5.9.0" />
+  <link rel="stylesheet" href="styles.css?v=5.9.1" />
 </head>
 <body>
   <header>
@@ -32,7 +32,7 @@
 
 
   <main>
-    <section class="panel active" id="play">
+    <section class="panel active" id="play"><div id="gameCenter" class="gameCenter"><div class="gcLeft">
       <div class="grid2">
         <div class="card">
           <h2>Game</h2>
@@ -114,7 +114,7 @@
           <div class="hint"><b>Lineups:</b> League tab saves a default batting order per team. In-game edits affect only the current game.</div>
         </div>
       </div>
-    </section>
+    </div><div class="gcRight"></div></div></section>
 
     <section class="panel" id="league">
       <div class="grid2">
@@ -405,7 +405,7 @@
   </div>
 
 
-  <script src="app.js?v=5.9.0"></script>
+  <script src="app.js?v=5.9.1"></script>
 
   <div class="modal" id="playerEditModal" aria-hidden="true">
     <div class="modalCard">
@@ -463,5 +463,29 @@
       </div>
     </div>
   </div>
+
+  <div class="modal" id="playerCardModal" aria-hidden="true">
+    <div class="modalCard pcCard">
+      <div class="row" style="justify-content:space-between; align-items:center">
+        <div>
+          <h2 style="margin:0" id="pcName">Player</h2>
+          <div class="hint" id="pcTeam"></div>
+        </div>
+        <button id="pcClose">Close</button>
+      </div>
+      <div class="pcGrid">
+        <div class="card" style="background:#0b1229">
+          <h3 class="h3">Season</h3>
+          <div id="pcSeason"></div>
+        </div>
+        <div class="card" style="background:#0b1229">
+          <h3 class="h3">Game (current)</h3>
+          <div id="pcGame"></div>
+        </div>
+      </div>
+      <div class="hint" id="pcNote"></div>
+    </div>
+  </div>
+
 </body>
 </html>

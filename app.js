@@ -1,4 +1,4 @@
-const APP_VERSION = "5.8.4";
+const APP_VERSION = "5.8.6";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -1180,6 +1180,7 @@ function doRoll(){
   renderPlay();
 }
 
+
 function simHalf(){
   simFast = true;
   if(!game) return;
@@ -1585,10 +1586,8 @@ function init(){
       // Play Mode game already loaded: just continue / update pitchers
       const homeId = game.homeId;
       const awayId = game.awayId;
-      const hp = el("homePitcher")?.value || game.pitcher.home || "";
-      const ap = el("awayPitcher")?.value || game.pitcher.away || "";
-      game.pitcher.home = hp;
-      game.pitcher.away = ap;
+      game.pitcher.home = el("homePitcher")?.value || game.pitcher.home || "";
+      game.pitcher.away = el("awayPitcher")?.value || game.pitcher.away || "";
       notePitcherEntry("home", game.pitcher.home);
       notePitcherEntry("away", game.pitcher.away);
       saveState();

@@ -24,6 +24,12 @@
       <button class="tab" data-tab="backup">Backup</button>
     </nav>
   </header>
+  <div id="ticker" class="ticker hidden">
+    <div class="tickerLabel">LEAGUE</div>
+    <div class="tickerMsg" id="tickerMsg"></div>
+    <button class="tickerX" id="tickerClose" title="Dismiss">×</button>
+  </div>
+
 
   <main>
     <section class="panel active" id="play">
@@ -252,6 +258,16 @@
     <section class="panel" id="stats">
       <div class="card">
         <h2>Season Batting Stats</h2>
+
+      <div class="card" style="margin:12px 0">
+        <h2>Exports</h2>
+        <div class="row">
+          <button id="exportSeasonCsv" class="primary">Download Season Stats (CSV)</button>
+          <button id="exportScheduleCsv">Download Schedule / Results (CSV)</button>
+          <button id="exportBoxscoresCsv">Download Game Boxscores (CSV)</button>
+        </div>
+        <div class="hint">CSV opens in Excel and imports cleanly into Google Sheets.</div>
+      </div>
         <div class="row">
           <label>Team</label><select id="statsTeam"></select>
           <button id="resetStats" class="danger">Reset Season</button>

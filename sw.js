@@ -1,5 +1,5 @@
 // Simple offline cache for PWA
-const CACHE = "bhbl-pwa-v561";
+const CACHE = "bhbl-pwa-v57";
 const ASSETS = ["./","./index.html","./styles.css","./app.js","./manifest.json"];
 self.addEventListener("install", (e)=>{ e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))); });
 self.addEventListener("activate",(e)=>{

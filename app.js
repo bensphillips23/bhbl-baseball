@@ -30,7 +30,9 @@ function defaultState(){
   home.lineup = home.roster.slice(0,9).map(p=>p.id);
   away.lineup = away.roster.slice(0,9).map(p=>p.id);
 
-  return { teams:[home,away], schedule:[], season:{ batting:{} } };
+  return { teams:[home,away], schedule:[],
+  gameHistory:[],
+  ticker:{ queue:[], last:{HR:null} }, season:{ batting:{} } };
 }
 
 function loadState(){
@@ -73,6 +75,8 @@ function loadState(){
 function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
 let state = loadState();
+  if(el("tickerClose")) el("tickerClose").onclick=()=>{ state.ticker.queue=[]; saveState(); renderTicker(); };
+
 
 function getTeam(id){ return state.teams.find(t=>t.id===id); }
 function getPlayer(pid){
@@ -122,6 +126,18 @@ function currentPitcherId(g){
 function ensureBat(pid){
   if(!state.season.batting[pid]) state.season.batting[pid] = { AB:0,H:0,HR:0,RBI:0,R:0,BB:0,SO:0,"2B":0,"3B":0 };
 }
+
+function ensureGameBat(pid){
+  if(!game || !pid) return;
+  if(!game.box) game.box={batting:{}, pitching:{}};
+  if(!game.box.batting[pid]) game.box.batting[pid] = { AB:0,H:0,HR:0,RBI:0,R:0,BB:0,SO:0,"2B":0,"3B":0 };
+}
+function ensureGamePitch(pid){
+  if(!game || !pid) return;
+  if(!game.box) game.box={batting:{}, pitching:{}};
+  if(!game.box.pitching[pid]) game.box.pitching[pid] = { OUTS:0, H:0, R:0, HR:0, BB:0, SO:0 };
+}
+
 
 
 function notePitcherEntry(teamSide, pid){
@@ -494,7 +510,8 @@ function newGame(homeId, awayId){
     seasonLink:null,
     decision:{ runEvents:[], pitcherEntries:{}, pitchOuts:{}, finalDecisions:null },
     final:false,
-    log:[]
+    log:[],
+    box:{ batting:{}, pitching:{} }
   };
 }
 function battingSide(g){ return g.half==="top" ? "away" : "home"; }
@@ -1081,17 +1098,18 @@ function creditPitchFromCode(g, code){
   if(!pid) return;
   ensurePitch(pid);
   const ps = state.season.pitching[pid];
+  const gps = (g===game) ? (ensureGamePitch(pid), game.box.pitching[pid]) : null;
 
-  if(code==="BB"){ ps.BB += 1; return; }
-  if(code==="K"){ ps.SO += 1; ps.OUTS += 1; if(g.decision){ g.decision.pitchOuts[pid]=(g.decision.pitchOuts[pid]||0)+1; } return; }
-  if(code.startsWith("FO")){ ps.OUTS += 1; if(g.decision){ g.decision.pitchOuts[pid]=(g.decision.pitchOuts[pid]||0)+1; } return; }
-  if(code.startsWith("GO")){ ps.OUTS += 1; if(g.decision){ g.decision.pitchOuts[pid]=(g.decision.pitchOuts[pid]||0)+1; } return; }
+  if(code==="BB"){ ps.BB += 1; if(gps) gps.BB += 1; return; }
+  if(code==="K"){ ps.SO += 1; ps.OUTS += 1; if(gps){ gps.SO += 1; gps.OUTS += 1; } if(g.decision){ g.decision.pitchOuts[pid]=(g.decision.pitchOuts[pid]||0)+1; } return; }
+  if(code.startsWith("FO")){ ps.OUTS += 1; if(gps) gps.OUTS += 1; if(g.decision){ g.decision.pitchOuts[pid]=(g.decision.pitchOuts[pid]||0)+1; } return; }
+  if(code.startsWith("GO")){ ps.OUTS += 1; if(gps) gps.OUTS += 1; if(g.decision){ g.decision.pitchOuts[pid]=(g.decision.pitchOuts[pid]||0)+1; } return; }
 
   // hits
-  if(code==="HR"){ ps.H += 1; ps.HR += 1; return; }
-  if(code==="3B"){ ps.H += 1; return; }
-  if(code.startsWith("2B")){ ps.H += 1; return; }
-  if(code.startsWith("1B")){ ps.H += 1; return; }
+  if(code==="HR"){ ps.H += 1; if(gps) gps.H += 1; ps.HR += 1; if(gps){ gps.H += 1; if(gps) gps.H += 1; gps.HR += 1; } return; }
+  if(code==="3B"){ ps.H += 1; if(gps) gps.H += 1; return; }
+  if(code.startsWith("2B")){ ps.H += 1; if(gps) gps.H += 1; return; }
+  if(code.startsWith("1B")){ ps.H += 1; if(gps) gps.H += 1; return; }
 }
 
 function doRoll(){
@@ -1163,10 +1181,28 @@ function finalizeSeasonGame(){
   sched.awayScore = game.score.away;
   sched.homeScore = game.score.home;
   sched.playedAt = new Date().toISOString();
+
+  // Save boxscore snapshot for exports
+  if(!state.gameHistory) state.gameHistory=[];
+  state.gameHistory.push({
+    id: uid(),
+    gameNo: sched.gameNo,
+    awayId: game.awayId,
+    homeId: game.homeId,
+    awayScore: game.score.away,
+    homeScore: game.score.home,
+    innings: game.inning,
+    playedAt: sched.playedAt,
+    box: game.box ? structuredClone(game.box) : {batting:{}, pitching:{}}
+  });
+  state.gameHistory = state.gameHistory.slice(-500);
+  checkLeaderChanges();
+
   const dec = computePitcherDecisions(game);
   game.decision.finalDecisions = dec;
   applyPitcherDecisionsToSeason(dec);
   saveState();
+  renderTicker();
   renderSchedule();
   renderStandings();
   renderPitching();
@@ -1518,7 +1554,143 @@ el("simSelected").onclick=()=>{
   // Schedule generator
   if(el("genSchedule")) el("genSchedule").onclick=generateSchedule;
   if(el("clearSchedule")) el("clearSchedule").onclick=clearScheduleAll;
+
+  // Exports
+  if(el("exportSeasonCsv")) el("exportSeasonCsv").onclick=exportSeasonCsv;
+  if(el("exportScheduleCsv")) el("exportScheduleCsv").onclick=exportScheduleCsv;
+  if(el("exportBoxscoresCsv")) el("exportBoxscoresCsv").onclick=exportBoxscoresCsv;
   if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
 }
 
 window.addEventListener("DOMContentLoaded", init);
+function downloadText(filename, text){
+  const blob = new Blob([text], {type:"text/csv;charset=utf-8;"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 250);
+}
+function toCsv(rows){
+  const esc = (v)=>{
+    if(v===null || v===undefined) return "";
+    const s = String(v);
+    if(/[",\n]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+    return s;
+  };
+  return rows.map(r=>r.map(esc).join(",")).join("\n");
+}
+
+function teamOfPlayer(pid){
+  for(const t of state.teams){
+    if(t.roster?.some(p=>p.id===pid)) return t;
+  }
+  return null;
+}
+
+function pushTicker(msg){
+  if(!msg) return;
+  if(!state.ticker) state.ticker={queue:[], last:{HR:null}};
+  state.ticker.queue = state.ticker.queue || [];
+  state.ticker.queue.unshift({ msg, ts: Date.now() });
+  state.ticker.queue = state.ticker.queue.slice(0, 20);
+  saveState();
+  renderTicker();
+}
+function renderTicker(){
+  const bar = el("ticker");
+  if(!bar) return;
+  const q = state.ticker?.queue || [];
+  if(q.length===0){
+    bar.classList.add("hidden");
+    return;
+  }
+  bar.classList.remove("hidden");
+  el("tickerMsg").textContent = q[0].msg;
+}
+
+function computeLeaderHR(){
+  let bestPid=null, bestVal=-1;
+  for(const pid in state.season.batting){
+    const s = state.season.batting[pid];
+    const v = Number(s.HR||0);
+    if(v>bestVal){ bestVal=v; bestPid=pid; }
+  }
+  return {pid:bestPid, val: bestVal<0?0:bestVal};
+}
+
+function checkLeaderChanges(){
+  const hr = computeLeaderHR();
+  const last = state.ticker?.last?.HR;
+  if(!last || last.pid!==hr.pid || last.val!==hr.val){
+    state.ticker.last.HR = hr;
+    if(hr.pid){
+      const p = getPlayer(hr.pid);
+      const t = teamOfPlayer(hr.pid);
+      const teamName = t?.name ? ` (${t.name})` : "";
+      pushTicker(`New HR leader: ${p?.name||"Unknown"}${teamName} (${hr.val})`);
+    }
+  }
+}
+
+/* Exports */
+function exportSeasonCsv(){
+  const rows=[];
+  rows.push(["Type","Player","Team","AB","H","HR","RBI","R","BB","SO","2B","3B","AVG"]);
+  for(const t of state.teams){
+    for(const p of (t.roster||[])){
+      const s = state.season.batting[p.id] || { AB:0,H:0,HR:0,RBI:0,R:0,BB:0,SO:0,"2B":0,"3B":0 };
+      const avg = s.AB ? (s.H/s.AB) : 0;
+      rows.push(["Batting",p.name,t.name,s.AB,s.H,s.HR,s.RBI,s.R,s.BB,s.SO,s["2B"]||0,s["3B"]||0,avg.toFixed(3)]);
+    }
+  }
+  rows.push([]);
+  rows.push(["Type","Pitcher","Team","IP","OUTS","H","R","HR","BB","SO","W","L","SV","ERA"]);
+  for(const t of state.teams){
+    for(const p of (t.pitchers||[])){
+      const s = state.season.pitching[p.id] || { OUTS:0,H:0,R:0,HR:0,BB:0,SO:0,W:0,L:0,SV:0 };
+      const ip = outsToIP(s.OUTS||0);
+      const era = s.OUTS ? ((s.R*9)/(s.OUTS/3)) : 0;
+      rows.push(["Pitching",p.name,t.name,ip,s.OUTS||0,s.H||0,s.R||0,s.HR||0,s.BB||0,s.SO||0,s.W||0,s.L||0,s.SV||0,era.toFixed(2)]);
+    }
+  }
+  downloadText("BHBL_Season_Stats.csv", toCsv(rows));
+}
+
+function exportScheduleCsv(){
+  const rows=[["GameNo","Away","Home","Status","AwayScore","HomeScore","PlayedAt"]];
+  const byId = Object.fromEntries(state.teams.map(t=>[t.id,t.name]));
+  for(const g of state.schedule){
+    rows.push([g.gameNo, byId[g.awayId]||"", byId[g.homeId]||"", g.status||"", g.awayScore??"", g.homeScore??"", g.playedAt||""]);
+  }
+  downloadText("BHBL_Schedule.csv", toCsv(rows));
+}
+
+function exportBoxscoresCsv(){
+  const rows=[];
+  const byId = Object.fromEntries(state.teams.map(t=>[t.id,t.name]));
+  rows.push(["GameNo","Away","Home","AwayScore","HomeScore","Section","Player","Team","AB","H","HR","RBI","R","BB","SO","2B","3B","IP","OUTS","PH","PR","PHR","PBB","PSO"]);
+  for(const g of (state.gameHistory||[])){
+    const away = byId[g.awayId]||"";
+    const home = byId[g.homeId]||"";
+    for(const pid in (g.box?.batting||{})){
+      const p=getPlayer(pid);
+      const team=teamOfPlayer(pid)?.name||"";
+      const s=g.box.batting[pid];
+      rows.push([g.gameNo||"",away,home,g.awayScore,g.homeScore,"Batting",p?.name||"",team,s.AB||0,s.H||0,s.HR||0,s.RBI||0,s.R||0,s.BB||0,s.SO||0,s["2B"]||0,s["3B"]||0,"","","","","","",""]);
+    }
+    for(const pid in (g.box?.pitching||{})){
+      const team = (getTeam(g.homeId)?.pitchers||[]).some(x=>x.id===pid) ? (byId[g.homeId]||"") :
+                   (getTeam(g.awayId)?.pitchers||[]).some(x=>x.id===pid) ? (byId[g.awayId]||"") : "";
+      const s=g.box.pitching[pid];
+      const name = getPitcher(g.homeId,pid)?.name || getPitcher(g.awayId,pid)?.name || getPlayer(pid)?.name || "";
+      rows.push([g.gameNo||"",away,home,g.awayScore,g.homeScore,"Pitching",name,team,"","","","","","","","","","",outsToIP(s.OUTS||0),s.OUTS||0,s.H||0,s.R||0,s.HR||0,s.BB||0,s.SO||0]);
+    }
+  }
+  downloadText("BHBL_Boxscores.csv", toCsv(rows));
+}
+
+

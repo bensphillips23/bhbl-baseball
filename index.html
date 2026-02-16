@@ -215,38 +215,29 @@
       <div class="card" style="margin-top:12px">
         <h2>Schedule Generator</h2>
         <div class="row">
-          <label>Rounds</label>
-          <select id="genRounds">
-            <option value="1">1 (play each opponent once)</option>
-            <option value="2" selected>2 (home &amp; away)</option>
-            <option value="3">3</option>
-            <option value="4">4</option>
-            <option value="5">5</option>
-            <option value="6">6</option>
-          </select>
-          <label>Series length</label>
-          <select id="genSeries">
-            <option value="1" selected>1</option>
+          <label>Division</label>
+          <select id="genDivision"></select>
+          <label>Games vs each division opponent</label>
+          <select id="genGPO">
             <option value="2">2</option>
             <option value="3">3</option>
             <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6" selected>6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
           </select>
         </div>
         <div class="row">
-          <label>Matchups</label>
-          <select id="genMatchups">
-            <option value="all" selected>All (round-robin)</option>
-            <option value="interdiv">Inter-division only (no intra-division)</option>
-          </select>
           <label>Mode</label>
           <select id="genMode">
-            <option value="replace" selected>Replace existing schedule</option>
-            <option value="append">Append to existing schedule</option>
+            <option value="replace" selected>Replace this division’s unplayed games</option>
+            <option value="append">Append games for this division</option>
           </select>
           <button id="genSchedule" class="primary">Generate</button>
           <button id="clearSchedule" class="danger">Clear Schedule</button>
         </div>
-        <div class="hint">Generator assigns game numbers automatically. Inter-division only means teams will not play teams in their own division during the regular season.</div>
+        <div class="hint">Generates a standalone schedule for the selected division only. Teams play only teams in their division during the regular season.</div>
       </div>
 
 </section>

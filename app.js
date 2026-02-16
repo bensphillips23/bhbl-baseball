@@ -1,4 +1,4 @@
-const APP_VERSION = "5.9.8";
+const APP_VERSION = "5.9.9";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -487,6 +487,7 @@ function fillScheduleDivFilter(){
 function renderSchedule(){
   const list = el("scheduleList");
   list.innerHTML="";
+  fillGenDivisionSelect();
   fillScheduleDivFilter();
   const sched = state.schedule.slice().sort((a,b)=>(Number(a.gameNo||0)-Number(b.gameNo||0)));
   if(!sched.length){
@@ -572,20 +573,47 @@ function rrPairings(teamIds){
   return out;
 }
 
-function generateSchedule(){
-  const rounds = Number(el("genRounds")?.value || 2);
-  const series = Number(el("genSeries")?.value || 1);
-  const mode = el("genMode")?.value || "replace";
-  const matchups = el("genMatchups")?.value || "all";
-  const baseIds = state.teams.map(t=>t.id).filter(Boolean);
-  if(baseIds.length < 2) return alert("Add at least 2 teams first.");
-
-  if(mode==="replace" && state.schedule.length>0){
-    if(!confirm("Replace the existing schedule?")) return;
-    state.schedule = [];
+function fillGenDivisionSelect(){
+  const sel = el("genDivision");
+  if(!sel) return;
+  ensureDivisions();
+  sel.innerHTML = "";
+  for(const d of state.season.structure.divisions){
+    const o=document.createElement("option");
+    o.value=d.id;
+    o.textContent=d.name;
+    sel.appendChild(o);
   }
-  if(mode==="append" && state.schedule.length>0){
-    if(!confirm("Append generated games to the existing schedule?")) return;
+  // Default to first division if not set
+  if(!sel.value && state.season.structure.divisions[0]) sel.value = state.season.structure.divisions[0].id;
+ }
+
+function generateSchedule(){
+  const mode = el("genMode")?.value || "replace";
+  const divId = el("genDivision")?.value || "";
+  const gamesPerOpp = Number(el("genGPO")?.value || 6);
+  ensureDivisions();
+  const div = state.season.structure.divisions.find(d=>d.id===divId) || state.season.structure.divisions[0];
+  if(!div) return alert("Create divisions first.");
+  const divTeamIds = state.teams.filter(t=>t.divisionId===div.id).map(t=>t.id);
+  if(divTeamIds.length < 2) return alert("This division needs at least 2 teams.");
+
+  if(mode==="replace"){
+    const hasAny = state.schedule.some(g=>{
+      const a=getTeam(g.awayId); const h=getTeam(g.homeId);
+      const inDiv = (a?.divisionId===div.id) && (h?.divisionId===div.id);
+      return inDiv && g.status!=="final";
+    });
+    if(hasAny && !confirm("Replace this division’s unplayed games?")) return;
+    // Only remove UNPLAYED games where both teams are in this division.
+    state.schedule = state.schedule.filter(g=>{
+      const a=getTeam(g.awayId); const h=getTeam(g.homeId);
+      const inDiv = (a?.divisionId===div.id) && (h?.divisionId===div.id);
+      return !(inDiv && g.status!=="final");
+    });
+  }
+  if(mode==="append"){
+    if(state.schedule.length>0 && !confirm("Append games for this division?")) return;
   }
 
   let gameNo = 1;
@@ -593,59 +621,25 @@ function generateSchedule(){
     gameNo = Math.max(gameNo, Number(g.gameNo||0)+1);
   }
 
-  ensureDivisions();
-
-  // Matchups: "all" (round-robin) or "interdiv" (no intra-division)
-  if(matchups==="interdiv"){
-    // Inter-division: each team plays every team outside its division (rounds times).
-    const teams = state.teams.slice();
-    for(let pass=0; pass<rounds; pass++){
-      for(let i=0;i<teams.length;i++){
-        for(let j=i+1;j<teams.length;j++){
-          const A=teams[i], B=teams[j];
-          if(!A || !B) continue;
-          if(A.divisionId && B.divisionId && A.divisionId===B.divisionId) continue; // skip intra-division
-          // Home/away balance: alternate by pass + pair index
-          const flip = ((pass + i + j) % 2)===1;
-          const homeId = flip ? B.id : A.id;
-          const awayId = flip ? A.id : B.id;
-          for(let s=0; s<series; s++){
-            state.schedule.push({
-              id: uid(),
-              gameNo: gameNo++,
-              awayId,
-              homeId,
-              status:"scheduled",
-              awayScore:0,
-              homeScore:0,
-              playedAt:null
-            });
-          }
-        }
-      }
-    }
-  } else {
-    for(let pass=0; pass<rounds; pass++){
-      const ids = baseIds.slice();
-      // invert home/away on odd passes to approximate home/away balance
-      if(pass % 2 === 1) ids.reverse();
-
-      const rr = rrPairings(ids);
-      for(const pairs of rr){
-        for(const [homeId, awayId] of pairs){
-          for(let s=0; s<series; s++){
-            state.schedule.push({
-              id: uid(),
-              gameNo: gameNo++,
-              awayId,
-              homeId,
-              status:"scheduled",
-              awayScore:0,
-              homeScore:0,
-              playedAt:null
-            });
-          }
-        }
+  // Standalone division schedule: teams ONLY play teams in their division.
+  // Each pair plays `gamesPerOpp` games, alternating home/away (balanced when even).
+  const ids = divTeamIds.slice();
+  for(let i=0;i<ids.length;i++){
+    for(let j=i+1;j<ids.length;j++){
+      const A = ids[i], B = ids[j];
+      for(let k=0;k<gamesPerOpp;k++){
+        const homeId = (k % 2 === 0) ? A : B;
+        const awayId = (k % 2 === 0) ? B : A;
+        state.schedule.push({
+          id: uid(),
+          gameNo: gameNo++,
+          awayId,
+          homeId,
+          status:"scheduled",
+          awayScore:0,
+          homeScore:0,
+          playedAt:null
+        });
       }
     }
   }

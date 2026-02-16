@@ -6,7 +6,7 @@
   <title>BHBL Dice Baseball</title>
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#0b1020" />
-  <link rel="stylesheet" href="styles.css?v=5.9.2" />
+  <link rel="stylesheet" href="styles.css?v=5.9.3" />
 </head>
 <body>
   <header>
@@ -102,22 +102,18 @@
             New: saved batting orders per team + in-game lineup edits. Next: pitching, box scores, season standings.
           </div>
         </div>
-<div class="row">
-            <button id="jumpSchedule">Go to Schedule</button>
-            <button id="jumpLeague">Go to League</button>
-          </div>
-          <hr class="sep"/>
+<hr class="sep"/>
           <div class="hint"><b>Lineups:</b> League tab saves a default batting order per team. In-game edits affect only the current game.</div>
         </div>
       </div>
-    </div><div class="gcRight"></div></div>
-
-        <div class="card" id="liveBoxCard">
+    </div><div class="gcRight">
+<div class="card" id="liveBoxCard">
           <div class="row" style="justify-content:space-between; align-items:center">
             <h3 class="h3" style="margin:0">Live Box Score</h3>
             <button id="toggleLiveBox" class="smallBtn">Hide</button>
           </div>
-          <div id="liveBox" class="liveBox"></div>
+</div></div>
+<div id="liveBox" class="liveBox"></div>
           <div class="hint" style="margin-top:8px">Click a player name to open their Player Card.</div>
         </div>
 
@@ -412,7 +408,7 @@
   </div>
 
 
-  <script src="app.js?v=5.9.2"></script>
+  <script src="app.js?v=5.9.3"></script>
 
   <div class="modal" id="playerEditModal" aria-hidden="true">
     <div class="modalCard">

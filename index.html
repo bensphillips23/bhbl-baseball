@@ -6,13 +6,13 @@
   <title>BHBL Dice Baseball</title>
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#0b1020" />
-  <link rel="stylesheet" href="styles.css?v=5.9.1" />
+  <link rel="stylesheet" href="styles.css?v=5.9.2" />
 </head>
 <body>
   <header>
     <div>
       <h1>BHBL Dice Baseball <span class="ver" id="appVersion"></span></h1>
-      <div class="sub">v2 — Lineups + Schedule. Installable (PWA). Saves locally on your PC.</div>
+      <div class="sub">v2 — Lineups + Schedule + Live Box + Standings/Leaders. Installable (PWA). Saves locally on your PC.</div>
     </div>
     <nav class="tabs">
       <button class="tab active" data-tab="play">Play</button>
@@ -245,9 +245,10 @@
         <h2>Standings</h2>
         <div class="row">
           <button id="recalcStandings" class="primary">Recalculate</button>
-          <span class="small">Standings update automatically when scheduled games are simulated.</span>
+          <span class="small">Standings update automatically when a scheduled game is finalized (played or simulated).</span>
         </div>
         <div class="tableWrap"><table id="standingsTable"></table></div>
+        <div class="hint">GB = games behind 1st. L10 and Streak are based on your schedule results order.</div>
       </div>
     </section>
 
@@ -284,7 +285,13 @@
                 <option value="H">Hits</option>
                 <option value="HR">HR</option>
                 <option value="RBI">RBI</option>
+                <option value="R">Runs</option>
+                <option value="BB">BB</option>
+                <option value="SO">SO</option>
                 <option value="AVG">Avg</option>
+                <option value="OBP">OBP</option>
+                <option value="SLG">SLG</option>
+                <option value="OPS">OPS</option>
               </select>
               <label>Top</label>
               <select id="leadTopN">
@@ -306,10 +313,13 @@
                 <option value="SV">SV</option>
                 <option value="SO">SO</option>
                 <option value="ERA">ERA</option>
+                <option value="WHIP">WHIP</option>
+                <option value="IP">IP</option>
+                <option value="GP">GP</option>
               </select>
             </div>
             <div class="tableWrap"><table id="leadPitTable"></table></div>
-            <div class="hint">ERA leader = lowest ERA (min 1 out recorded).</div>
+            <div class="hint">ERA/WHIP leaders = lowest values (min 1 out recorded).</div>
           </div>
         </div>
       </div>

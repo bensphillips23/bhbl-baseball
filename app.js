@@ -1,4 +1,4 @@
-const APP_VERSION = "5.9.1";
+const APP_VERSION = "5.9.2";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -10,7 +10,7 @@ function isSeasonGame(g){
 function inSeasonGame(g){ return isSeasonGame(g); }
 
 function _initBatLine(){ return {G:0,AB:0,H:0,R:0,RBI:0,HR:0,BB:0,SO:0,"2B":0,"3B":0}; }
-function _initPitchLine(){ return {G:0,OUTS:0,H:0,R:0,ER:0,HR:0,BB:0,SO:0,W:0,L:0,SV:0}; }
+function _initPitchLine(){ return {GP:0,OUTS:0,H:0,R:0,ER:0,HR:0,BB:0,SO:0,W:0,L:0,SV:0}; }
 
 // Always track per-game boxscore. Season games also mirror stats into season totals.
 function gameBat(g, pid){
@@ -73,7 +73,8 @@ function defaultState(){
 
   return { teams:[home,away], schedule:[],
   gameHistory:[],
-  ticker:{ queue:[], last:{HR:null} }, season:{ batting:{}, pitching:{} } };
+  ticker:{ queue:[], last:{HR:null} },
+  season:{ batting:{}, pitching:{}, standings:{}, gameLog:[] } };
 }
 
 function loadState(){
@@ -101,11 +102,14 @@ function loadState(){
       if(g.homeScore===undefined) g.homeScore=0;
       if(g.playedAt===undefined) g.playedAt=null;
     }
-    if(!s.season) s.season={batting:{}, pitching:{}};
+    if(!s.season) s.season={batting:{}, pitching:{}, standings:{}, gameLog:[]};
     if(!s.season.batting) s.season.batting={};
     if(!s.season.pitching) s.season.pitching={};
+    if(!s.season.standings) s.season.standings={};
+    if(!s.season.gameLog) s.season.gameLog=[];
     for(const k of Object.keys(s.season.pitching)){
       const ps=s.season.pitching[k];
+      if(ps.GP===undefined) ps.GP = (ps.G!==undefined) ? ps.G : 0; // back-compat
       if(ps.W===undefined) ps.W=0;
       if(ps.L===undefined) ps.L=0;
       if(ps.SV===undefined) ps.SV=0;
@@ -1018,23 +1022,33 @@ function renderRoster(){
 function battingAvg(s){ return s.AB ? (s.H/s.AB) : 0; }
 
 function computeStandings(){
-  // Returns array of {teamId, GP,W,L,RF,RA,RD,WPct}
+  // Returns array of {teamId, GP,W,L,RF,RA,RD,WPct,GB,L10,Streak}
   const map = {};
   for(const t of state.teams){
-    map[t.id] = { teamId:t.id, GP:0, W:0, L:0, RF:0, RA:0, RD:0, WPct:0 };
+    map[t.id] = { teamId:t.id, GP:0, W:0, L:0, RF:0, RA:0, RD:0, WPct:0, GB:0, L10:"-", Streak:"-", _res:[] };
   }
-  for(const g of state.schedule){
-    if(g.status!=="final") continue;
+
+  const finals = (state.schedule||[])
+    .filter(g=>g && g.status==="final")
+    .slice()
+    .sort((a,b)=>{
+      const ta = (a.playedAt ? Date.parse(a.playedAt) : 0) || 0;
+      const tb = (b.playedAt ? Date.parse(b.playedAt) : 0) || 0;
+      if(ta!==tb) return ta - tb;
+      return (Number(a.gameNo)||0) - (Number(b.gameNo)||0);
+    });
+
+  for(const g of finals){
     const away = map[g.awayId];
     const home = map[g.homeId];
     if(!away || !home) continue;
     away.GP += 1; home.GP += 1;
     away.RF += g.awayScore; away.RA += g.homeScore;
     home.RF += g.homeScore; home.RA += g.awayScore;
-    if(g.awayScore > g.homeScore){ away.W += 1; home.L += 1; }
-    else if(g.homeScore > g.awayScore){ home.W += 1; away.L += 1; }
-    // ties not expected; ignore
+    if(g.awayScore > g.homeScore){ away.W += 1; home.L += 1; away._res.push("W"); home._res.push("L"); }
+    else if(g.homeScore > g.awayScore){ home.W += 1; away.L += 1; home._res.push("W"); away._res.push("L"); }
   }
+
   const rows = Object.values(map);
   for(const r of rows){
     r.RD = r.RF - r.RA;
@@ -1047,6 +1061,34 @@ function computeStandings(){
     if(b.RD!==a.RD) return b.RD - a.RD;
     return b.RF - a.RF;
   });
+
+  const leader = rows[0] || null;
+  for(const r of rows){
+    // GB
+    if(!leader) r.GB = 0;
+    else {
+      r.GB = ((leader.W - r.W) + (r.L - leader.L)) / 2;
+      if(!isFinite(r.GB) || Math.abs(r.GB) < 1e-9) r.GB = 0;
+    }
+    // L10
+    const last10 = (r._res||[]).slice(-10);
+    if(last10.length){
+      const w10 = last10.filter(x=>x==="W").length;
+      const l10 = last10.filter(x=>x==="L").length;
+      r.L10 = `${w10}-${l10}`;
+    } else r.L10 = "-";
+
+    // Streak
+    const res = (r._res||[]);
+    if(!res.length) r.Streak = "-";
+    else {
+      const last = res[res.length-1];
+      let n=1;
+      for(let i=res.length-2;i>=0;i--){ if(res[i]===last) n++; else break; }
+      r.Streak = `${last}${n}`;
+    }
+  }
+
   return rows;
 }
 
@@ -1054,7 +1096,7 @@ function renderStandings(){
   const tbl = el("standingsTable");
   if(!tbl) return;
   tbl.innerHTML = "";
-  const head = ["Team","GP","W","L","Pct","RF","RA","RD"];
+  const head = ["Team","W","L","Pct","GB","L10","Strk","RF","RA","RD"];
   const trh=document.createElement("tr");
   head.forEach(h=>{ const th=document.createElement("th"); th.textContent=h; trh.appendChild(th); });
   tbl.appendChild(trh);
@@ -1064,10 +1106,14 @@ function renderStandings(){
     const team = getTeam(r.teamId);
     const tr=document.createElement("tr");
     if(idx===0 && r.GP>0) tr.className="leader";
+    const gb = (idx===0) ? "-" : ((r.GB%1===0) ? String(r.GB) : r.GB.toFixed(1));
     const vals=[
       team?.name ?? "??",
-      r.GP, r.W, r.L,
+      r.W, r.L,
       r.WPct.toFixed(3).replace(/^0/,""),
+      gb,
+      r.L10,
+      r.Streak,
       r.RF, r.RA, r.RD
     ];
     vals.forEach(v=>{ const td=document.createElement("td"); td.textContent=String(v); tr.appendChild(td); });
@@ -1082,7 +1128,7 @@ function renderPitching(){
   tbl.innerHTML="";
   if(!team) return;
 
-  const head=["Pitcher","Role","IP","H","R","HR","BB","SO","W","L","SV","ERA"];
+  const head=["Pitcher","Role","GP","IP","H","R","ER","HR","BB","SO","W","L","SV","ERA"];
   const trh=document.createElement("tr");
   head.forEach(h=>{ const th=document.createElement("th"); th.textContent=h; trh.appendChild(th); });
   tbl.appendChild(trh);
@@ -1093,9 +1139,9 @@ function renderPitching(){
     const ipOuts=s.OUTS||0;
     const ip=outsToIP(ipOuts);
     const ipInnings = ipOuts/3;
-    const era = ipInnings>0 ? (9*s.R/ipInnings) : 0;
+    const era = ipInnings>0 ? (9*(s.ER||0)/ipInnings) : 0;
     const tr=document.createElement("tr");
-    const vals=[p.name,p.role,ip,s.H,s.R,s.HR,s.BB,s.SO,s.W,s.L,s.SV,era.toFixed(2)];
+    const vals=[p.name,p.role,(s.GP||0),ip,s.H,s.R,(s.ER||0),s.HR,s.BB,s.SO,s.W,s.L,s.SV,era.toFixed(2)];
     vals.forEach(v=>{ const td=document.createElement("td"); td.textContent=String(v); tr.appendChild(td); });
     tbl.appendChild(tr);
   }
@@ -1111,27 +1157,60 @@ function renderLeaders(){
     for(const p of (t.roster||[])){
       ensureBat(p.id);
       const s = state.season.batting[p.id];
-      const avg = (s.AB>0) ? (s.H/s.AB) : 0;
-      const val = (batCat==="AVG") ? avg : (s[batCat] ?? 0);
-      if(batCat==="AVG" && s.AB===0) continue;
-      bat.push({ name:p.name, team:t.name, ab:s.AB, val });
+      const ab = Number(s.AB)||0;
+      const h  = Number(s.H)||0;
+      const bb = Number(s.BB)||0;
+      const so = Number(s.SO)||0;
+      const hr = Number(s.HR)||0;
+      const r  = Number(s.R)||0;
+      const rbi= Number(s.RBI)||0;
+      const dbl= Number(s["2B"])||0;
+      const tpl= Number(s["3B"])||0;
+
+      const avg = (ab>0) ? (h/ab) : 0;
+      // Simplified OBP/SLG (no HBP/SF tracked)
+      const obp = ((ab+bb)>0) ? ((h+bb)/(ab+bb)) : 0;
+      const singles = Math.max(0, h - dbl - tpl - hr);
+      const tb = singles + 2*dbl + 3*tpl + 4*hr;
+      const slg = (ab>0) ? (tb/ab) : 0;
+      const ops = obp + slg;
+
+      let val = 0;
+      if(batCat==="AVG") val = avg;
+      else if(batCat==="OBP") val = obp;
+      else if(batCat==="SLG") val = slg;
+      else if(batCat==="OPS") val = ops;
+      else if(batCat==="AB") val = ab;
+      else if(batCat==="H") val = h;
+      else if(batCat==="HR") val = hr;
+      else if(batCat==="RBI") val = rbi;
+      else if(batCat==="R") val = r;
+      else if(batCat==="BB") val = bb;
+      else if(batCat==="SO") val = so;
+      else val = Number(s[batCat] ?? 0);
+
+      if(["AVG","OBP","SLG","OPS"].includes(batCat) && ab===0) continue;
+      bat.push({ name:p.name, team:t.name, ab, val });
     }
   }
   bat.sort((a,b)=>{
-    if(batCat==="AVG") return b.val - a.val;
+    if(["AVG","OBP","SLG","OPS"].includes(batCat)) return b.val - a.val;
     return (b.val - a.val) || (b.ab - a.ab);
   });
+
   const batTbl = el("leadBatTable");
   if(batTbl){
     batTbl.innerHTML="";
     const trh=document.createElement("tr");
-    ["#","Player","Team","AB", batCat==="AVG" ? "AVG" : batCat].forEach(h=>{
+    ["#","Player","Team","AB", batCat].forEach(h=>{
       const th=document.createElement("th"); th.textContent=h; trh.appendChild(th);
     });
     batTbl.appendChild(trh);
     bat.slice(0, topN).forEach((row,i)=>{
       const tr=document.createElement("tr");
-      const displayVal = (batCat==="AVG") ? row.val.toFixed(3) : String(row.val);
+      const displayVal = (["AVG","OBP","SLG","OPS"].includes(batCat))
+        ? row.val.toFixed(3).replace(/^0/,"")
+        : String(row.val);
       [String(i+1), row.name, row.team, String(row.ab), displayVal].forEach(v=>{
         const td=document.createElement("td"); td.textContent=v; tr.appendChild(td);
       });
@@ -1146,23 +1225,38 @@ function renderLeaders(){
     for(const p of (t.pitchers||[])){
       ensurePitch(p.id);
       const s = state.season.pitching[p.id];
-      const ipOuts = Number(s.OUTS||0);
-      const ip = ipOuts/3;
-      const era = ip>0 ? (9*(s.R||0)/ip) : 0;
-      let val;
-      if(pitCat==="ERA"){
-        if(ipOuts<=0) continue;
-        val = era;
-      } else {
-        val = s[pitCat] ?? 0;
-      }
-      pit.push({ name:p.name, team:t.name, ipOuts, val });
+      const outs = Number(s.OUTS||0);
+      const ip = outs/3;
+      const h  = Number(s.H||0);
+      const bb = Number(s.BB||0);
+      const so = Number(s.SO||0);
+      const w  = Number(s.W||0);
+      const l  = Number(s.L||0);
+      const sv = Number(s.SV||0);
+      const er = Number(s.ER||0);
+      const era  = (outs>0) ? (9*er/ip) : 0;
+      const whip = (outs>0) ? ((h+bb)/ip) : 0;
+
+      let val = 0;
+      if(pitCat==="ERA") val = era;
+      else if(pitCat==="WHIP") val = whip;
+      else if(pitCat==="IP") val = ip;
+      else if(pitCat==="SO") val = so;
+      else if(pitCat==="W") val = w;
+      else if(pitCat==="L") val = l;
+      else if(pitCat==="SV") val = sv;
+      else if(pitCat==="GP") val = Number(s.GP||0);
+      else val = Number(s[pitCat] ?? 0);
+
+      if(["ERA","WHIP"].includes(pitCat) && outs<=0) continue;
+      pit.push({ name:p.name, team:t.name, outs, val });
     }
   }
   pit.sort((a,b)=>{
-    if(pitCat==="ERA") return a.val - b.val; // lower better
-    return (b.val - a.val) || (b.ipOuts - a.ipOuts);
+    if(["ERA","WHIP"].includes(pitCat)) return a.val - b.val; // lower better
+    return (b.val - a.val) || (b.outs - a.outs);
   });
+
   const pitTbl = el("leadPitTable");
   if(pitTbl){
     pitTbl.innerHTML="";
@@ -1173,16 +1267,14 @@ function renderLeaders(){
     pitTbl.appendChild(trh);
     pit.slice(0, topN).forEach((row,i)=>{
       const tr=document.createElement("tr");
-      const displayVal = (pitCat==="ERA") ? row.val.toFixed(2) : String(row.val);
-      const ipStr = outsToIP(row.ipOuts);
+      const displayVal = (["ERA","WHIP"].includes(pitCat)) ? row.val.toFixed(2) : String(row.val);
+      const ipStr = outsToIP(row.outs);
       [String(i+1), row.name, row.team, ipStr, displayVal].forEach(v=>{
         const td=document.createElement("td"); td.textContent=v; tr.appendChild(td);
       });
       pitTbl.appendChild(tr);
     });
   }
-  renderLeaders();
-
 }
 
 function renderStats(){
@@ -1226,10 +1318,10 @@ function importJSON(){
       renderLeague();
       renderSchedule();
       renderStats();
-    renderStandings();
-    renderStandings();
-      renderPlay();
+      renderLeaders();
       renderStandings();
+      renderPlay();
+      renderPitching();
       alert("Imported!");
     } catch(e) { alert("Import failed: "+e.message); }
   });
@@ -1241,7 +1333,7 @@ function showTab(tab){
   if(tab==="league") renderLeague();
   if(tab==="schedule") renderSchedule();
   if(tab==="standings") renderStandings();
-  if(tab==="stats") renderStats();
+  if(tab==="stats") { renderStats(); renderLeaders(); }
   if(tab==="pitching") renderPitching();
 }
 function wireTabs(){ document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click", ()=>showTab(btn.dataset.tab))); }
@@ -1360,6 +1452,15 @@ function finalizeSeasonGame(){
   const dec = computePitcherDecisions(game);
   game.decision.finalDecisions = dec;
   applyPitcherDecisionsToSeason(dec);
+
+  // GP (games pitched): count any pitcher who appeared in this game
+  const appeared = Object.keys(game.decision?.pitcherEntries || {});
+  for(const pid of appeared){
+    if(!pid) continue;
+    ensurePitch(pid);
+    state.season.pitching[pid].GP = Number(state.season.pitching[pid].GP||0) + 1;
+  }
+
   saveState();
   renderTicker();
   renderSchedule();
@@ -1959,13 +2060,13 @@ function exportSeasonCsv(){
     }
   }
   rows.push([]);
-  rows.push(["Type","Pitcher","Team","IP","OUTS","H","R","HR","BB","SO","W","L","SV","ERA"]);
+  rows.push(["Type","Pitcher","Team","GP","IP","OUTS","H","R","ER","HR","BB","SO","W","L","SV","ERA"]);
   for(const t of state.teams){
     for(const p of (t.pitchers||[])){
-      const s = state.season.pitching[p.id] || { OUTS:0,H:0,R:0,HR:0,BB:0,SO:0,W:0,L:0,SV:0 };
+      const s = state.season.pitching[p.id] || { OUTS:0,H:0,R:0,ER:0,HR:0,BB:0,SO:0,W:0,L:0,SV:0 };
       const ip = outsToIP(s.OUTS||0);
-      const era = s.OUTS ? ((s.R*9)/(s.OUTS/3)) : 0;
-      rows.push(["Pitching",p.name,t.name,ip,s.OUTS||0,s.H||0,s.R||0,s.HR||0,s.BB||0,s.SO||0,s.W||0,s.L||0,s.SV||0,era.toFixed(2)]);
+      const era = s.OUTS ? (((s.ER||0)*9)/(s.OUTS/3)) : 0;
+      rows.push(["Pitching",p.name,t.name,(s.GP||0),ip,s.OUTS||0,s.H||0,s.R||0,(s.ER||0),s.HR||0,s.BB||0,s.SO||0,s.W||0,s.L||0,s.SV||0,era.toFixed(2)]);
     }
   }
   downloadText("BHBL_Season_Stats.csv", toCsv(rows));
@@ -1983,7 +2084,7 @@ function exportScheduleCsv(){
 function exportBoxscoresCsv(){
   const rows=[];
   const byId = Object.fromEntries(state.teams.map(t=>[t.id,t.name]));
-  rows.push(["GameNo","Away","Home","AwayScore","HomeScore","Section","Player","Team","AB","H","HR","RBI","R","BB","SO","2B","3B","IP","OUTS","PH","PR","PHR","PBB","PSO"]);
+  rows.push(["GameNo","Away","Home","AwayScore","HomeScore","Section","Player","Team","AB","H","HR","RBI","R","BB","SO","2B","3B","IP","OUTS","PH","PR","PER","PHR","PBB","PSO"]);
   for(const g of (state.gameHistory||[])){
     const away = byId[g.awayId]||"";
     const home = byId[g.homeId]||"";
@@ -1998,7 +2099,7 @@ function exportBoxscoresCsv(){
                    (getTeam(g.awayId)?.pitchers||[]).some(x=>x.id===pid) ? (byId[g.awayId]||"") : "";
       const s=g.box.pitching[pid];
       const name = getPitcher(g.homeId,pid)?.name || getPitcher(g.awayId,pid)?.name || getPlayer(pid)?.name || "";
-      rows.push([g.gameNo||"",away,home,g.awayScore,g.homeScore,"Pitching",name,team,"","","","","","","","","","",outsToIP(s.OUTS||0),s.OUTS||0,s.H||0,s.R||0,s.HR||0,s.BB||0,s.SO||0]);
+      rows.push([g.gameNo||"",away,home,g.awayScore,g.homeScore,"Pitching",name,team,"","","","","","","","","","",outsToIP(s.OUTS||0),s.OUTS||0,s.H||0,s.R||0,(s.ER||0),s.HR||0,s.BB||0,s.SO||0]);
     }
   }
   downloadText("BHBL_Boxscores.csv", toCsv(rows));

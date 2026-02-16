@@ -1,8 +1,8 @@
-const APP_VERSION = "5.9.0";
+const APP_VERSION = "5.9.1";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
-/*** Season helpers (robust) ***/
+/*** Helpers (robust) ***/
 function isSeasonGame(g){
   return !!(g && g.seasonLink && g.seasonLink.scheduleId);
 }
@@ -12,33 +12,33 @@ function inSeasonGame(g){ return isSeasonGame(g); }
 function _initBatLine(){ return {G:0,AB:0,H:0,R:0,RBI:0,HR:0,BB:0,SO:0,"2B":0,"3B":0}; }
 function _initPitchLine(){ return {G:0,OUTS:0,H:0,R:0,ER:0,HR:0,BB:0,SO:0,W:0,L:0,SV:0}; }
 
-function batStore(g, pid){
-  // Season games: write to season totals
-  if(isSeasonGame(g)){
-    state.season = state.season || {};
-    state.season.batting = state.season.batting || {};
-    if(state.season.batting[pid]==null) state.season.batting[pid]=_initBatLine();
-    return state.season.batting[pid];
-  }
-  // Play mode: write to per-game box
+// Always track per-game boxscore. Season games also mirror stats into season totals.
+function gameBat(g, pid){
   g.box = g.box || {batting:{}, pitching:{}};
   g.box.batting = g.box.batting || {};
   if(g.box.batting[pid]==null) g.box.batting[pid]=_initBatLine();
   return g.box.batting[pid];
 }
-
-function pitchStore(g, pid){
-  if(isSeasonGame(g)){
-    state.season = state.season || {};
-    state.season.pitching = state.season.pitching || {};
-    if(state.season.pitching[pid]==null) state.season.pitching[pid]=_initPitchLine();
-    return state.season.pitching[pid];
-  }
+function gamePitch(g, pid){
   g.box = g.box || {batting:{}, pitching:{}};
   g.box.pitching = g.box.pitching || {};
   if(g.box.pitching[pid]==null) g.box.pitching[pid]=_initPitchLine();
   return g.box.pitching[pid];
 }
+function seasonBat(pid){
+  state.season = state.season || {};
+  state.season.batting = state.season.batting || {};
+  if(state.season.batting[pid]==null) state.season.batting[pid]=_initBatLine();
+  return state.season.batting[pid];
+}
+function seasonPitch(pid){
+  state.season = state.season || {};
+  state.season.pitching = state.season.pitching || {};
+  if(state.season.pitching[pid]==null) state.season.pitching[pid]=_initPitchLine();
+  return state.season.pitching[pid];
+}
+
+function bump(obj, key, n=1){ obj[key] = (Number(obj[key])||0) + n; }
 /*** end helpers ***/
 
 
@@ -73,7 +73,7 @@ function defaultState(){
 
   return { teams:[home,away], schedule:[],
   gameHistory:[],
-  ticker:{ queue:[], last:{HR:null} }, season:{ batting:{} } };
+  ticker:{ queue:[], last:{HR:null} }, season:{ batting:{}, pitching:{} } };
 }
 
 function loadState(){
@@ -130,9 +130,7 @@ function getPlayer(pid){
 
 function ensurePitch(pid){
   if(!pid) return;
-  if(!state.season.pitching[pid]){
-    state.season.pitching[pid] = { OUTS:0, H:0, R:0, HR:0, BB:0, SO:0, W:0, L:0, SV:0 };
-  }
+  if(!state.season.pitching[pid]) state.season.pitching[pid] = _initPitchLine();
 }
 function outsToIP(outs){
   const full = Math.floor(outs/3);
@@ -165,18 +163,18 @@ function currentPitcherId(g){
 }
 
 function ensureBat(pid){
-  if(!state.season.batting[pid]) state.season.batting[pid] = { AB:0,H:0,HR:0,RBI:0,R:0,BB:0,SO:0,"2B":0,"3B":0 };
+  if(!state.season.batting[pid]) state.season.batting[pid] = _initBatLine();
 }
 
 function ensureGameBat(pid){
   if(!game || !pid) return;
   if(!game.box) game.box={batting:{}, pitching:{}};
-  if(!game.box.batting[pid]) game.box.batting[pid] = { AB:0,H:0,HR:0,RBI:0,R:0,BB:0,SO:0,"2B":0,"3B":0 };
+  if(!game.box.batting[pid]) game.box.batting[pid] = _initBatLine();
 }
 function ensureGamePitch(pid){
   if(!game || !pid) return;
   if(!game.box) game.box={batting:{}, pitching:{}};
-  if(!game.box.pitching[pid]) game.box.pitching[pid] = { OUTS:0, H:0, R:0, HR:0, BB:0, SO:0 };
+  if(!game.box.pitching[pid]) game.box.pitching[pid] = _initPitchLine();
 }
 
 
@@ -193,30 +191,6 @@ function notePitcherEntry(teamSide, pid){
       half: game.half
     };
   }
-
-
-function isSeasonGame(g){
-  return !!(g && g.seasonLink && g.seasonLink.scheduleId);
-}
-function batStore(g, pid){
-  if(isSeasonGame(g)){
-    ensureBat(pid);
-    return state.season.batting[pid];
-  } else {
-    ensureGameBat(pid);
-    return g.box.batting[pid];
-  }
-}
-function pitchStore(g, pid){
-  if(isSeasonGame(g)){
-    ensurePitch(pid);
-    return state.season.pitching[pid];
-  } else {
-    ensureGamePitch(pid);
-    return g.box.pitching[pid];
-  }
-}
-
 }
 
 function recordRunEvent(){
@@ -693,8 +667,16 @@ function endHalf(g){
 }
 
 
-function creditRun(pid){ if(!pid) return; ensureBat(pid); state.season.batting[pid].R += 1; }
-function rbi(bid){ if(!bid) return; ensureBat(bid); state.season.batting[bid].RBI += 1; }
+function creditRun(pid){
+  if(!pid || !game) return;
+  bump(gameBat(game, pid), "R", 1);
+  if(isSeasonGame(game)) bump(seasonBat(pid), "R", 1);
+}
+function rbi(bid){
+  if(!bid || !game) return;
+  bump(gameBat(game, bid), "RBI", 1);
+  if(isSeasonGame(game)) bump(seasonBat(bid), "RBI", 1);
+}
 function scoreRun(g, bid){
   // Rule (simplified): if the 3rd out is made on this play, no runs score.
   if(g && g._outsBeforePlay===2 && g.outs>=3) return;
@@ -703,7 +685,14 @@ function scoreRun(g, bid){
   recordRunEvent();
   // pitching: charge run to active pitcher (fielding team)
   const rpid = currentPitcherId(g);
-  if(rpid){ ensurePitch(rpid); state.season.pitching[rpid].R += 1; }
+  if(rpid){
+    bump(gamePitch(g, rpid), "R", 1);
+    bump(gamePitch(g, rpid), "ER", 1); // simplified: all runs are earned (no errors tracked)
+    if(isSeasonGame(g)){
+      bump(seasonPitch(rpid), "R", 1);
+      bump(seasonPitch(rpid), "ER", 1);
+    }
+  }
   if(bid) rbi(bid);
 }
 
@@ -749,21 +738,23 @@ function apply(code, roll){
   const batter=getPlayer(bid);
   // snapshot outs at start of play (for 3rd-out run rule)
   g._outsBeforePlay = g.outs;
-  const s = batStore(g, bid);
+  const s = gameBat(g, bid);
+  const ss = isSeasonGame(g) ? seasonBat(bid) : null;
 
-  if(code==="BB") { s.BB += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → WALK`); walkAdvance(game, bid); nextBatter(game); return; }
-  if(code==="K") { s.AB += 1; s.SO += 1; game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → STRIKEOUT`); nextBatter(game); return; }
-  if(code.startsWith("FO")) { s.AB += 1; game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → FLY OUT`); if(code==="FO_1") advanceAll(game, 1, bid, -1); nextBatter(game); return; }
+  if(code==="BB") { bump(s,"BB",1); if(ss) bump(ss,"BB",1); addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → WALK`); walkAdvance(game, bid); nextBatter(game); return; }
+  if(code==="K") { bump(s,"AB",1); bump(s,"SO",1); if(ss){ bump(ss,"AB",1); bump(ss,"SO",1); } game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → STRIKEOUT`); nextBatter(game); return; }
+  if(code.startsWith("FO")) { bump(s,"AB",1); if(ss) bump(ss,"AB",1); game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → FLY OUT`); if(code==="FO_1") advanceAll(game, 1, bid, -1); nextBatter(game); return; }
   if(code.startsWith("GO")) {
-    s.AB += 1;
+    bump(s,"AB",1); if(ss) bump(ss,"AB",1);
     if(code==="GO_L") { const d=fcLeadOut(game,bid); addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → GROUNDBALL → ${d}`); nextBatter(game); return; }
     game.outs += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → GROUNDBALL, batter out`); if(code==="GO_B1") advanceAll(game, 1, bid, -1); nextBatter(game); return;
   }
 
   // hits
-  s.AB += 1;
+  bump(s,"AB",1); if(ss) bump(ss,"AB",1);
   if(code==="HR") {
-    s.H += 1; s.HR += 1;
+    bump(s,"H",1); bump(s,"HR",1);
+    if(ss){ bump(ss,"H",1); bump(ss,"HR",1); }
     addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → HOME RUN`);
     const runners=game.bases.slice();
     for(const r of runners) if(r) creditRun(r);
@@ -774,9 +765,9 @@ function apply(code, roll){
     nextBatter(game);
     return;
   }
-  if(code==="3B") { s.H += 1; s["3B"] += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → TRIPLE`); advanceAll(game, 3, bid, 2); nextBatter(game); return; }
-  if(code.startsWith("2B")) { s.H += 1; s["2B"] += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → DOUBLE`); const adv = (code==="2B3") ? 3 : 2; advanceAll(game, adv, bid, 1); nextBatter(game); return; }
-  if(code.startsWith("1B")) { s.H += 1; addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → SINGLE`); const adv = (code==="1B2") ? 2 : 1; advanceAll(game, adv, bid, 0); nextBatter(game); return; }
+  if(code==="3B") { bump(s,"H",1); bump(s,"3B",1); if(ss){ bump(ss,"H",1); bump(ss,"3B",1); } addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → TRIPLE`); advanceAll(game, 3, bid, 2); nextBatter(game); return; }
+  if(code.startsWith("2B")) { bump(s,"H",1); bump(s,"2B",1); if(ss){ bump(ss,"H",1); bump(ss,"2B",1); } addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → DOUBLE`); const adv = (code==="2B3") ? 3 : 2; advanceAll(game, adv, bid, 1); nextBatter(game); return; }
+  if(code.startsWith("1B")) { bump(s,"H",1); if(ss) bump(ss,"H",1); addLog(game, `${batter.name} rolled ${roll.total} [${roll.d1}+${roll.d2}] → SINGLE`); const adv = (code==="1B2") ? 2 : 1; advanceAll(game, adv, bid, 0); nextBatter(game); return; }
 }
 
 function renderTeamsAll(){
@@ -832,6 +823,7 @@ function renderPlay(){
     else el("startGame").textContent = "Start Game";
   }
   updateScoreboardUI();
+    renderLiveBoxScore();
     return;
   }
   el("inning").textContent=String(game.inning);
@@ -859,6 +851,61 @@ function renderPlay(){
     else el("startGame").textContent = "Start Game";
   }
   updateScoreboardUI();
+  renderLiveBoxScore();
+}
+
+function _boxRowForBat(pid, line){
+  const p = getPlayer(pid);
+  if(!p) return null;
+  const ab = Number(line.AB)||0;
+  const h  = Number(line.H)||0;
+  const avg = ab ? (h/ab) : 0;
+  return [p.name, ab, h, Number(line["2B"])||0, Number(line["3B"])||0, Number(line.HR)||0, Number(line.RBI)||0, Number(line.R)||0, Number(line.BB)||0, Number(line.SO)||0, avg.toFixed(3).replace(/^0/,"")];
+}
+function _boxRowForPitch(pid, line){
+  const p = getPitcher(game?.awayId, pid) || getPitcher(game?.homeId, pid) || {name:"(unknown)"};
+  return [p.name, outsToIP(Number(line.OUTS)||0), Number(line.H)||0, Number(line.R)||0, Number(line.ER)||0, Number(line.HR)||0, Number(line.BB)||0, Number(line.SO)||0];
+}
+
+function renderLiveBoxScore(){
+  const boxEl = el("liveBox");
+  if(!boxEl) return;
+  if(!game){
+    boxEl.innerHTML = `<div class="small">Start a game to see live stats.</div>`;
+    return;
+  }
+  game.box = game.box || {batting:{}, pitching:{}};
+  const away = getTeam(game.awayId);
+  const home = getTeam(game.homeId);
+
+  const makeTable = (title, head, rows)=>{
+    const thead = `<tr>${head.map(h=>`<th>${h}</th>`).join("")}</tr>`;
+    const tbody = rows.length ? rows.map(r=>`<tr>${r.map(v=>`<td>${v}</td>`).join("")}</tr>`).join("")
+                              : `<tr><td colspan="${head.length}" class="small">No data yet</td></tr>`;
+    return `<div><h3>${title}</h3><div class="miniTable"><table><thead>${thead}</thead><tbody>${tbody}</tbody></table></div></div>`;
+  };
+
+  const batHead = ["Player","AB","H","2B","3B","HR","RBI","R","BB","SO","AVG"];
+  const pitHead = ["Pitcher","IP","H","R","ER","HR","BB","SO"];
+
+  const awayBatRows = (away?.lineup||[])
+    .map(pid=>_boxRowForBat(pid, game.box.batting?.[pid]||{}))
+    .filter(Boolean);
+  const homeBatRows = (home?.lineup||[])
+    .map(pid=>_boxRowForBat(pid, game.box.batting?.[pid]||{}))
+    .filter(Boolean);
+
+  const awayPitchers = Object.keys(game.box.pitching||{}).filter(pid=>getPitcher(game.awayId,pid));
+  const homePitchers = Object.keys(game.box.pitching||{}).filter(pid=>getPitcher(game.homeId,pid));
+  const awayPitRows = awayPitchers.map(pid=>_boxRowForPitch(pid, game.box.pitching[pid]||{}));
+  const homePitRows = homePitchers.map(pid=>_boxRowForPitch(pid, game.box.pitching[pid]||{}));
+
+  boxEl.innerHTML = [
+    makeTable(`${away?.name||"Away"} Batting`, batHead, awayBatRows),
+    makeTable(`${home?.name||"Home"} Batting`, batHead, homeBatRows),
+    makeTable(`${away?.name||"Away"} Pitching`, pitHead, awayPitRows),
+    makeTable(`${home?.name||"Home"} Pitching`, pitHead, homePitRows),
+  ].join("");
 }
 
 
@@ -1206,19 +1253,19 @@ function creditPitchFromCode(g, code){
   }
   const pid = currentPitcherId(g);
   if(!pid) return;
-  const ps = pitchStore(g, pid);
-  const gps = null;
+  const ps = gamePitch(g, pid);
+  const sps = isSeasonGame(g) ? seasonPitch(pid) : null;
 
-  if(code==="BB"){ ps.BB += 1; if(gps) gps.BB += 1; return; }
-  if(code==="K"){ ps.SO += 1; ps.OUTS += 1; if(gps){ gps.SO += 1; gps.OUTS += 1; } if(g.decision){ g.decision.pitchOuts[pid]=(g.decision.pitchOuts[pid]||0)+1; } return; }
-  if(code.startsWith("FO")){ ps.OUTS += 1; if(gps) gps.OUTS += 1; if(g.decision){ g.decision.pitchOuts[pid]=(g.decision.pitchOuts[pid]||0)+1; } return; }
-  if(code.startsWith("GO")){ ps.OUTS += 1; if(gps) gps.OUTS += 1; if(g.decision){ g.decision.pitchOuts[pid]=(g.decision.pitchOuts[pid]||0)+1; } return; }
+  if(code==="BB"){ bump(ps,"BB",1); if(sps) bump(sps,"BB",1); return; }
+  if(code==="K"){ bump(ps,"SO",1); bump(ps,"OUTS",1); if(sps){ bump(sps,"SO",1); bump(sps,"OUTS",1); } if(g.decision){ g.decision.pitchOuts[pid]=(g.decision.pitchOuts[pid]||0)+1; } return; }
+  if(code.startsWith("FO")){ bump(ps,"OUTS",1); if(sps) bump(sps,"OUTS",1); if(g.decision){ g.decision.pitchOuts[pid]=(g.decision.pitchOuts[pid]||0)+1; } return; }
+  if(code.startsWith("GO")){ bump(ps,"OUTS",1); if(sps) bump(sps,"OUTS",1); if(g.decision){ g.decision.pitchOuts[pid]=(g.decision.pitchOuts[pid]||0)+1; } return; }
 
   // hits
-  if(code==="HR"){ ps.H += 1; if(gps) gps.H += 1; ps.HR += 1; if(gps){ gps.H += 1; if(gps) gps.H += 1; gps.HR += 1; } return; }
-  if(code==="3B"){ ps.H += 1; if(gps) gps.H += 1; return; }
-  if(code.startsWith("2B")){ ps.H += 1; if(gps) gps.H += 1; return; }
-  if(code.startsWith("1B")){ ps.H += 1; if(gps) gps.H += 1; return; }
+  if(code==="HR"){ bump(ps,"H",1); bump(ps,"HR",1); if(sps){ bump(sps,"H",1); bump(sps,"HR",1); } return; }
+  if(code==="3B"){ bump(ps,"H",1); if(sps) bump(sps,"H",1); return; }
+  if(code.startsWith("2B")){ bump(ps,"H",1); if(sps) bump(sps,"H",1); return; }
+  if(code.startsWith("1B")){ bump(ps,"H",1); if(sps) bump(sps,"H",1); return; }
 }
 
 function doRoll(){
@@ -1698,8 +1745,8 @@ function init(){
     renderPlay();
   };
 
-  el("jumpSchedule").onclick=()=>showTab("schedule");
-  el("jumpLeague").onclick=()=>showTab("league");
+  if(el("jumpSchedule")) el("jumpSchedule").onclick=()=>showTab("schedule");
+  if(el("jumpLeague")) el("jumpLeague").onclick=()=>showTab("league");
 
   el("addTeam").onclick=()=>{
     const name=el("newTeam").value.trim();

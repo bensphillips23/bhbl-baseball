@@ -12,6 +12,18 @@ main{padding:16px}
 .card{background:#121a33;border:1px solid #233055;border-radius:16px;padding:12px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:900px){.grid2{grid-template-columns:1fr}}
+
+/* Play screen: wider + sidebar for live box */
+.playLayout{display:grid;grid-template-columns:minmax(520px,1.35fr) minmax(320px,1fr);gap:12px;align-items:start}
+@media(max-width:1100px){.playLayout{grid-template-columns:1fr}}
+.playMain .log{height:180px}
+.playSide{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto}
+.liveBox{display:flex;flex-direction:column;gap:12px}
+.liveBox h3{margin:0;font-size:13px}
+.liveBox .miniTable{overflow:auto;border:1px solid #233055;border-radius:12px}
+.liveBox table{width:100%;border-collapse:collapse;font-size:12px}
+.liveBox th,.liveBox td{border-bottom:1px solid #233055;padding:6px 8px;white-space:nowrap}
+.liveBox th{background:#0b1229;position:sticky;top:0}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0}
 input,select,button{background:#0b1229;border:1px solid #233055;color:#e5e7eb;padding:8px 10px;border-radius:10px}
 button{cursor:pointer}

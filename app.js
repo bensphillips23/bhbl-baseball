@@ -1,4 +1,4 @@
-const APP_VERSION = "5.9.6";
+const APP_VERSION = "5.9.7";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -1534,11 +1534,11 @@ function renderAwards(){
     const ops=obp+slg;
     const avg=(ab>0)?(h/ab):0;
     // MVP formula: heavily favor AVG + power + production (HR/RBI)
-    const st = state.season?.standings?.[m.teamId] || null;
+    const m=batterMeta(pid);
+    const st = state.season?.standings?.[m?.teamId] || null;
     const wp = st ? (num(st.wins)/(Math.max(1, num(st.wins)+num(st.losses)))) : 0;
     const winBonus = wp * 30; // slight bump for winning teams
     const score=(avg*1000) + (hr*35) + (rbi*7) + (ops*100) + (h*2) + winBonus;
-    const m=batterMeta(pid);
     hitters.push({pid, name:m.name, team:m.team, teamId:m.teamId, pos:m.pos, ab, avg, hr, rbi, r, ops, score});
   }
   hitters.sort((a,b)=>b.score-a.score);

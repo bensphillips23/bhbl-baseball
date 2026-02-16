@@ -1,4 +1,4 @@
-const APP_VERSION = "5.9.3";
+const APP_VERSION = "5.9.4";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -71,10 +71,19 @@ function defaultState(){
   home.lineup = home.roster.slice(0,9).map(p=>p.id);
   away.lineup = away.roster.slice(0,9).map(p=>p.id);
 
+  const divs=[
+    {id:uid(), name:"East"},
+    {id:uid(), name:"West"},
+    {id:uid(), name:"North"},
+    {id:uid(), name:"South"},
+  ];
+  home.divisionId = divs[0].id;
+  away.divisionId = divs[1].id;
+
   return { teams:[home,away], schedule:[],
   gameHistory:[],
   ticker:{ queue:[], last:{HR:null} },
-  season:{ batting:{}, pitching:{}, standings:{}, gameLog:[] } };
+  season:{ batting:{}, pitching:{}, standings:{}, gameLog:[], structure:{ leagueName:"League", divisions:divs } } };
 }
 
 function loadState(){
@@ -88,6 +97,7 @@ function loadState(){
       if(!t.lineup) t.lineup = t.roster.slice(0,9).map(p=>p.id);
       if(!t.pitchers) t.pitchers=[];
       if(t.defaultSPId===undefined) t.defaultSPId=null;
+      if(t.divisionId===undefined) t.divisionId=null;
     }
     if(!s.schedule) s.schedule=[];
     // v5 schedule migration: assign game numbers
@@ -102,11 +112,31 @@ function loadState(){
       if(g.homeScore===undefined) g.homeScore=0;
       if(g.playedAt===undefined) g.playedAt=null;
     }
-    if(!s.season) s.season={batting:{}, pitching:{}, standings:{}, gameLog:[]};
+    if(!s.season) s.season={batting:{}, pitching:{}, standings:{}, gameLog:[], structure:null};
     if(!s.season.batting) s.season.batting={};
     if(!s.season.pitching) s.season.pitching={};
     if(!s.season.standings) s.season.standings={};
     if(!s.season.gameLog) s.season.gameLog=[];
+    if(!s.season.structure) s.season.structure = { leagueName:"League", divisions:[] };
+    if(!Array.isArray(s.season.structure.divisions)) s.season.structure.divisions=[];
+
+    // Division migration: ensure at least 4 divisions exist, and assign teams if missing
+    if(s.season.structure.divisions.length===0){
+      s.season.structure.divisions = [
+        {id:uid(), name:"East"},
+        {id:uid(), name:"West"},
+        {id:uid(), name:"North"},
+        {id:uid(), name:"South"},
+      ];
+    }
+    const divIds = s.season.structure.divisions.map(d=>d.id);
+    let di=0;
+    for(const t of s.teams){
+      if(!t.divisionId || !divIds.includes(t.divisionId)){
+        t.divisionId = divIds[di % divIds.length];
+        di++;
+      }
+    }
     for(const k of Object.keys(s.season.pitching)){
       const ps=s.season.pitching[k];
       if(ps.GP===undefined) ps.GP = (ps.G!==undefined) ? ps.G : 0; // back-compat
@@ -1022,11 +1052,34 @@ function renderRoster(){
 
 function battingAvg(s){ return s.AB ? (s.H/s.AB) : 0; }
 
-function computeStandings(){
-  // Returns array of {teamId, GP,W,L,RF,RA,RD,WPct,GB,L10,Streak}
-  const map = {};
+function ensureDivisions(){
+  state.season = state.season || {};
+  state.season.structure = state.season.structure || { leagueName:"League", divisions:[] };
+  if(!Array.isArray(state.season.structure.divisions)) state.season.structure.divisions=[];
+  if(state.season.structure.divisions.length===0){
+    state.season.structure.divisions = [
+      {id:uid(), name:"East"},
+      {id:uid(), name:"West"},
+      {id:uid(), name:"North"},
+      {id:uid(), name:"South"},
+    ];
+  }
+  const divIds = state.season.structure.divisions.map(d=>d.id);
+  let di=0;
   for(const t of state.teams){
-    map[t.id] = { teamId:t.id, GP:0, W:0, L:0, RF:0, RA:0, RD:0, WPct:0, GB:0, L10:"-", Streak:"-", _res:[] };
+    if(!t.divisionId || !divIds.includes(t.divisionId)){
+      t.divisionId = divIds[di % divIds.length];
+      di++;
+    }
+  }
+}
+
+function computeStandingsForTeamIds(teamIds){
+  // Returns array of {teamId, GP,W,L,RF,RA,RD,WPct,GB,L10,Streak}
+  const set = new Set(teamIds);
+  const map = {};
+  for(const tid of teamIds){
+    map[tid] = { teamId:tid, GP:0, W:0, L:0, RF:0, RA:0, RD:0, WPct:0, GB:0, L10:"-", Streak:"-", _res:[] };
   }
 
   const finals = (state.schedule||[])
@@ -1040,14 +1093,24 @@ function computeStandings(){
     });
 
   for(const g of finals){
-    const away = map[g.awayId];
-    const home = map[g.homeId];
-    if(!away || !home) continue;
-    away.GP += 1; home.GP += 1;
-    away.RF += g.awayScore; away.RA += g.homeScore;
-    home.RF += g.homeScore; home.RA += g.awayScore;
-    if(g.awayScore > g.homeScore){ away.W += 1; home.L += 1; away._res.push("W"); home._res.push("L"); }
-    else if(g.homeScore > g.awayScore){ home.W += 1; away.L += 1; home._res.push("W"); away._res.push("L"); }
+    const awayIn = set.has(g.awayId);
+    const homeIn = set.has(g.homeId);
+    if(!awayIn && !homeIn) continue;
+
+    if(awayIn){
+      const away = map[g.awayId];
+      away.GP += 1;
+      away.RF += g.awayScore; away.RA += g.homeScore;
+      if(g.awayScore > g.homeScore){ away.W += 1; away._res.push("W"); }
+      else if(g.homeScore > g.awayScore){ away.L += 1; away._res.push("L"); }
+    }
+    if(homeIn){
+      const home = map[g.homeId];
+      home.GP += 1;
+      home.RF += g.homeScore; home.RA += g.awayScore;
+      if(g.homeScore > g.awayScore){ home.W += 1; home._res.push("W"); }
+      else if(g.awayScore > g.homeScore){ home.L += 1; home._res.push("L"); }
+    }
   }
 
   const rows = Object.values(map);
@@ -1056,7 +1119,6 @@ function computeStandings(){
     r.WPct = (r.GP ? (r.W / r.GP) : 0);
   }
   rows.sort((a,b)=>{
-    // sort by win pct, then wins, then RD, then RF
     if(b.WPct!==a.WPct) return b.WPct - a.WPct;
     if(b.W!==a.W) return b.W - a.W;
     if(b.RD!==a.RD) return b.RD - a.RD;
@@ -1065,13 +1127,12 @@ function computeStandings(){
 
   const leader = rows[0] || null;
   for(const r of rows){
-    // GB
     if(!leader) r.GB = 0;
     else {
       r.GB = ((leader.W - r.W) + (r.L - leader.L)) / 2;
       if(!isFinite(r.GB) || Math.abs(r.GB) < 1e-9) r.GB = 0;
     }
-    // L10
+
     const last10 = (r._res||[]).slice(-10);
     if(last10.length){
       const w10 = last10.filter(x=>x==="W").length;
@@ -1079,7 +1140,6 @@ function computeStandings(){
       r.L10 = `${w10}-${l10}`;
     } else r.L10 = "-";
 
-    // Streak
     const res = (r._res||[]);
     if(!res.length) r.Streak = "-";
     else {
@@ -1089,27 +1149,22 @@ function computeStandings(){
       r.Streak = `${last}${n}`;
     }
   }
-
   return rows;
 }
 
-function renderStandings(){
-  const tbl = el("standingsTable");
-  if(!tbl) return;
-  tbl.innerHTML = "";
-  const head = ["Team","W","L","Pct","GB","L10","Strk","RF","RA","RD"];
+function makeStandingsTable(rows){
+  const tbl=document.createElement("table");
+  const head=["Team","W","L","Pct","GB","L10","Strk","RF","RA","RD"];
   const trh=document.createElement("tr");
   head.forEach(h=>{ const th=document.createElement("th"); th.textContent=h; trh.appendChild(th); });
   tbl.appendChild(trh);
-
-  const rows = computeStandings();
   rows.forEach((r,idx)=>{
-    const team = getTeam(r.teamId);
+    const team=getTeam(r.teamId);
     const tr=document.createElement("tr");
     if(idx===0 && r.GP>0) tr.className="leader";
-    const gb = (idx===0) ? "-" : ((r.GB%1===0) ? String(r.GB) : r.GB.toFixed(1));
+    const gb=(idx===0)?"-":((r.GB%1===0)?String(r.GB):r.GB.toFixed(1));
     const vals=[
-      team?.name ?? "??",
+      team?.name??"??",
       r.W, r.L,
       r.WPct.toFixed(3).replace(/^0/,""),
       gb,
@@ -1120,6 +1175,95 @@ function renderStandings(){
     vals.forEach(v=>{ const td=document.createElement("td"); td.textContent=String(v); tr.appendChild(td); });
     tbl.appendChild(tr);
   });
+  return tbl;
+}
+
+function renderDivisionManager(){
+  ensureDivisions();
+  const list=el("divisionsList");
+  const asn=el("divisionAssignments");
+  if(!list || !asn) return;
+
+  // Divisions list
+  list.innerHTML="";
+  const divs = state.season.structure.divisions;
+  for(const d of divs){
+    const row=document.createElement("div");
+    row.className="row";
+    const inp=document.createElement("input");
+    inp.value=d.name;
+    inp.onchange=()=>{ d.name = inp.value.trim() || d.name; saveState(); renderStandings(); };
+    const del=document.createElement("button");
+    del.className="danger";
+    del.textContent="Delete";
+    del.onclick=()=>{
+      if(divs.length<=1) return alert("You must have at least 1 division.");
+      if(!confirm(`Delete division "${d.name}"? Teams in it will move to the first division.`)) return;
+      const first = divs.find(x=>x.id!==d.id);
+      for(const t of state.teams){
+        if(t.divisionId===d.id) t.divisionId = first.id;
+      }
+      state.season.structure.divisions = divs.filter(x=>x.id!==d.id);
+      saveState();
+      renderStandings();
+    };
+    row.appendChild(inp);
+    row.appendChild(del);
+    list.appendChild(row);
+  }
+
+  // Team assignments
+  asn.innerHTML="";
+  for(const t of state.teams){
+    const row=document.createElement("div");
+    row.className="row";
+    row.innerHTML = `<div class="pill"><b>${t.name}</b></div>`;
+    const sel=document.createElement("select");
+    for(const d of state.season.structure.divisions){
+      const o=document.createElement("option");
+      o.value=d.id; o.textContent=d.name;
+      if(t.divisionId===d.id) o.selected=true;
+      sel.appendChild(o);
+    }
+    sel.onchange=()=>{ t.divisionId = sel.value; saveState(); renderStandings(); };
+    row.appendChild(sel);
+    asn.appendChild(row);
+  }
+}
+
+function renderStandings(){
+  const wrap = el("standingsWrap");
+  if(!wrap) return;
+  ensureDivisions();
+  renderDivisionManager();
+
+  const viewSel = el("standingsView");
+  const view = viewSel?.value || "division";
+  wrap.innerHTML="";
+
+  if(view==="league"){
+    const rows = computeStandingsForTeamIds(state.teams.map(t=>t.id));
+    const tableWrap=document.createElement("div");
+    tableWrap.className="tableWrap";
+    tableWrap.appendChild(makeStandingsTable(rows));
+    wrap.appendChild(tableWrap);
+    return;
+  }
+
+  // Division view
+  for(const d of state.season.structure.divisions){
+    const teamsIn = state.teams.filter(t=>t.divisionId===d.id);
+    if(!teamsIn.length) continue;
+    const h=document.createElement("h3");
+    h.className="h3";
+    h.textContent=d.name;
+    wrap.appendChild(h);
+    const rows = computeStandingsForTeamIds(teamsIn.map(t=>t.id));
+    const tableWrap=document.createElement("div");
+    tableWrap.className="tableWrap";
+    tableWrap.appendChild(makeStandingsTable(rows));
+    wrap.appendChild(tableWrap);
+  }
 }
 
 
@@ -1278,6 +1422,165 @@ function renderLeaders(){
   }
 }
 
+function pitcherMeta(pid){
+  for(const t of state.teams){
+    for(const p of (t.pitchers||[])){
+      if(p.id===pid) return {name:p.name, team:t.name, role:p.role, teamId:t.id};
+    }
+  }
+  return {name:(pid||"?") , team:"?", role:"?", teamId:null};
+}
+
+function batterMeta(pid){
+  for(const t of state.teams){
+    for(const p of (t.roster||[])){
+      if(p.id===pid) return {name:p.name, team:t.name, pos:p.pos, teamId:t.id};
+    }
+  }
+  return {name:(pid||"?") , team:"?", pos:"?", teamId:null};
+}
+
+function awardCard(title, winnerLine, topRows, cols){
+  const card=document.createElement("div");
+  card.className="card";
+  card.style.background="#0b1229";
+  card.style.marginTop="12px";
+
+  const h=document.createElement("h3");
+  h.className="h3";
+  h.textContent=title;
+  card.appendChild(h);
+
+  const w=document.createElement("div");
+  w.className="pill";
+  w.innerHTML = winnerLine;
+  card.appendChild(w);
+
+  const tableWrap=document.createElement("div");
+  tableWrap.className="tableWrap";
+  const tbl=document.createElement("table");
+  const trh=document.createElement("tr");
+  cols.forEach(c=>{ const th=document.createElement("th"); th.textContent=c; trh.appendChild(th); });
+  tbl.appendChild(trh);
+  topRows.forEach((r,i)=>{
+    const tr=document.createElement("tr");
+    const vals=[String(i+1), ...r];
+    vals.forEach(v=>{ const td=document.createElement("td"); td.textContent=String(v); tr.appendChild(td); });
+    tbl.appendChild(tr);
+  });
+  tableWrap.appendChild(tbl);
+  card.appendChild(tableWrap);
+  return card;
+}
+
+function renderAwards(){
+  const wrap=el("awardsWrap");
+  if(!wrap) return;
+  wrap.innerHTML="";
+
+  // MVP (hitters)
+  const hitters=[];
+  for(const pid of Object.keys(state.season?.batting||{})){
+    const s=state.season.batting[pid];
+    const ab=Number(s.AB)||0;
+    if(ab<=0) continue;
+    const h=Number(s.H)||0;
+    const bb=Number(s.BB)||0;
+    const hr=Number(s.HR)||0;
+    const rbi=Number(s.RBI)||0;
+    const r=Number(s.R)||0;
+    const dbl=Number(s["2B"])||0;
+    const tpl=Number(s["3B"])||0;
+    const singles=Math.max(0, h - dbl - tpl - hr);
+    const obp=((ab+bb)>0)?((h+bb)/(ab+bb)):0;
+    const tb=singles + 2*dbl + 3*tpl + 4*hr;
+    const slg=(ab>0)?(tb/ab):0;
+    const ops=obp+slg;
+    const score=(ops*1000) + (hr*8) + (rbi*3) + (r*2) + (h*1);
+    const m=batterMeta(pid);
+    hitters.push({pid, name:m.name, team:m.team, ab, hr, rbi, r, ops, score});
+  }
+  hitters.sort((a,b)=>b.score-a.score);
+  const mvp=hitters[0]||null;
+  if(mvp){
+    const winnerLine = `<b>${mvp.name}</b> — ${mvp.team} · OPS ${mvp.ops.toFixed(3).replace(/^0/,"")} · HR ${mvp.hr} · RBI ${mvp.rbi} · R ${mvp.r}`;
+    const topRows = hitters.slice(0,5).map(x=>[
+      x.name,
+      x.team,
+      x.ab,
+      x.ops.toFixed(3).replace(/^0/,""),
+      x.hr,
+      x.rbi,
+      x.r,
+    ]);
+    wrap.appendChild(awardCard("MVP", winnerLine, topRows, ["#","Player","Team","AB","OPS","HR","RBI","R"]));
+  } else {
+    const p=document.createElement("div");
+    p.className="small";
+    p.textContent="No batting stats yet.";
+    wrap.appendChild(p);
+  }
+
+  // Cy Young (pitchers)
+  const pitchers=[];
+  for(const pid of Object.keys(state.season?.pitching||{})){
+    const s=state.season.pitching[pid];
+    const outs=Number(s.OUTS)||0;
+    if(outs<=0) continue;
+    const ip=outs/3;
+    const er=Number(s.ER)||0;
+    const h=Number(s.H)||0;
+    const bb=Number(s.BB)||0;
+    const so=Number(s.SO)||0;
+    const w=Number(s.W)||0;
+    const sv=Number(s.SV)||0;
+    const era=(ip>0)?(9*er/ip):0;
+    const whip=(ip>0)?((bb+h)/ip):0;
+    const score=(ip*4) + (so*1.5) + (w*6) + (sv*4) - (era*25) - (whip*15);
+    const m=pitcherMeta(pid);
+    pitchers.push({pid, name:m.name, team:m.team, role:m.role, outs, ip, so, w, sv, era, whip, score});
+  }
+  pitchers.sort((a,b)=>b.score-a.score);
+  const cy=pitchers[0]||null;
+  if(cy){
+    const winnerLine = `<b>${cy.name}</b> — ${cy.team} · ERA ${cy.era.toFixed(2)} · WHIP ${cy.whip.toFixed(2)} · ${outsToIP(cy.outs)} IP · SO ${cy.so}`;
+    const topRows = pitchers.slice(0,5).map(x=>[
+      x.name,
+      x.team,
+      outsToIP(x.outs),
+      x.era.toFixed(2),
+      x.whip.toFixed(2),
+      x.so,
+      x.w,
+      x.sv,
+    ]);
+    wrap.appendChild(awardCard("Cy Young", winnerLine, topRows, ["#","Pitcher","Team","IP","ERA","WHIP","SO","W","SV"]));
+  }
+
+  // Reliever of the Year (RP)
+  const relievers = pitchers.filter(p=>String(p.role||"").toUpperCase()==="RP");
+  relievers.forEach(r=>{
+    // override score for relievers: saves + dominance
+    r.rScore = (r.sv*12) + (r.so*1.2) + (r.ip*1) - (r.era*22) - (r.whip*12);
+  });
+  relievers.sort((a,b)=>(b.rScore||0)-(a.rScore||0));
+  const roy=relievers[0]||null;
+  if(roy){
+    const winnerLine = `<b>${roy.name}</b> — ${roy.team} · SV ${roy.sv} · ERA ${roy.era.toFixed(2)} · WHIP ${roy.whip.toFixed(2)} · SO ${roy.so}`;
+    const topRows = relievers.slice(0,5).map(x=>[
+      x.name,
+      x.team,
+      outsToIP(x.outs),
+      x.sv,
+      x.era.toFixed(2),
+      x.whip.toFixed(2),
+      x.so,
+      x.w,
+    ]);
+    wrap.appendChild(awardCard("Reliever of the Year", winnerLine, topRows, ["#","Pitcher","Team","IP","SV","ERA","WHIP","SO","W"]));
+  }
+}
+
 function renderStats(){
 
   const team=getTeam(el("statsTeam").value);
@@ -1321,6 +1624,7 @@ function importJSON(){
       renderStats();
       renderLeaders();
       renderStandings();
+      renderAwards();
       renderPlay();
       renderPitching();
       alert("Imported!");
@@ -1334,6 +1638,7 @@ function showTab(tab){
   if(tab==="league") renderLeague();
   if(tab==="schedule") renderSchedule();
   if(tab==="standings") renderStandings();
+  if(tab==="awards") renderAwards();
   if(tab==="stats") { renderStats(); renderLeaders(); }
   if(tab==="pitching") renderPitching();
 }
@@ -1951,13 +2256,31 @@ el("simSelected").onclick=()=>{
   if(el("leadTopN")) el("leadTopN").onchange=renderLeaders;
   if(el("pitchTeam")) el("pitchTeam").onchange=renderPitching;
   if(el("recalcStandings")) el("recalcStandings").onclick=renderStandings;
+  if(el("standingsView")) el("standingsView").onchange=renderStandings;
+
+  if(el("addDivision")) el("addDivision").onclick=()=>{
+    ensureDivisions();
+    const name = (el("newDivisionName")?.value || "").trim();
+    if(!name) return alert("Enter a division name.");
+    state.season.structure.divisions.push({id:uid(), name});
+    el("newDivisionName").value="";
+    // Assign any unassigned teams
+    ensureDivisions();
+    saveState();
+    renderStandings();
+  };
+
+  if(el("recalcAwards")) el("recalcAwards").onclick=renderAwards;
   el("resetStats").onclick=()=>{
     if(!confirm("Reset ALL season stats AND mark scheduled games unplayed?")) return;
-    state.season={batting:{}};
+    const structure = state.season?.structure ? JSON.parse(JSON.stringify(state.season.structure)) : { leagueName:"League", divisions:[] };
+    state.season={batting:{}, pitching:{}, standings:{}, gameLog:[], structure};
     for(const g of state.schedule){ g.status="scheduled"; g.homeScore=0; g.awayScore=0; g.playedAt=null; }
     saveState();
     renderStats();
     renderSchedule();
+    renderStandings();
+    renderAwards();
   };
 
   el("exportJson").onclick=exportJSON;

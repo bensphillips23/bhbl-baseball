@@ -6,7 +6,7 @@
   <title>BHBL Dice Baseball</title>
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#0b1020" />
-  <link rel="stylesheet" href="styles.css?v=5.9.2" />
+  <link rel="stylesheet" href="styles.css?v=5.9.4" />
 </head>
 <body>
   <header>
@@ -19,6 +19,7 @@
       <button class="tab" data-tab="league">League</button>
       <button class="tab" data-tab="schedule">Schedule</button>
       <button class="tab" data-tab="standings">Standings</button>
+      <button class="tab" data-tab="awards">Awards</button>
       <button class="tab" data-tab="stats">Stats</button>
       <button class="tab" data-tab="pitching">Pitching</button>
       <button class="tab" data-tab="backup">Backup</button>
@@ -245,10 +246,40 @@
         <h2>Standings</h2>
         <div class="row">
           <button id="recalcStandings" class="primary">Recalculate</button>
+          <label style="margin-left:8px">View</label>
+          <select id="standingsView">
+            <option value="division" selected>By Division</option>
+            <option value="league">League</option>
+          </select>
           <span class="small">Standings update automatically when a scheduled game is finalized (played or simulated).</span>
         </div>
-        <div class="tableWrap"><table id="standingsTable"></table></div>
-        <div class="hint">GB = games behind 1st. L10 and Streak are based on your schedule results order.</div>
+        <div id="standingsWrap"></div>
+        <div class="hint">GB = games behind 1st in that view (division or league). L10 and Streak follow your schedule results order.</div>
+
+        <div class="card" style="margin-top:12px; background:#0b1229">
+          <h3 class="h3">Divisions</h3>
+          <div class="row">
+            <input id="newDivisionName" placeholder="Add division (e.g., East)" />
+            <button id="addDivision" class="primary">Add</button>
+          </div>
+          <div id="divisionsList"></div>
+          <div class="hint">You can add or delete divisions anytime. Teams can be reassigned below.</div>
+
+          <h3 class="h3" style="margin-top:10px">Team Assignments</h3>
+          <div id="divisionAssignments"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="awards">
+      <div class="card">
+        <h2>Awards</h2>
+        <div class="row">
+          <button id="recalcAwards" class="primary">Recalculate</button>
+          <span class="small">Awards are based on current season totals.</span>
+        </div>
+        <div id="awardsWrap"></div>
+        <div class="hint">MVP uses OPS + counting stats. Cy Young emphasizes ERA/WHIP + innings + strikeouts. Reliever of the Year emphasizes saves + dominance.</div>
       </div>
     </section>
 

@@ -1,4 +1,4 @@
-const APP_VERSION = "5.9.2";
+const APP_VERSION = "5.9.3";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -110,6 +110,7 @@ function loadState(){
     for(const k of Object.keys(s.season.pitching)){
       const ps=s.season.pitching[k];
       if(ps.GP===undefined) ps.GP = (ps.G!==undefined) ? ps.G : 0; // back-compat
+      if(ps.ER===undefined && ps.R!==undefined) ps.ER = ps.R; // backfill: older saves tracked only R
       if(ps.W===undefined) ps.W=0;
       if(ps.L===undefined) ps.L=0;
       if(ps.SV===undefined) ps.SV=0;

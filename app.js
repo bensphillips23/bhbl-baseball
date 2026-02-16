@@ -1606,7 +1606,18 @@ function renderAwards(){
   if(!wrap) return;
   wrap.innerHTML="";
 
-  const seasonGamesPlayed = (state.schedule||[]).filter(g=>isSeasonGame(g) && g.status==="played").length;
+  const seasonGamesPlayed = (() => {
+    const sched = (state.schedule||[]).filter(g=>g && (g.status==="final"||g.status==="played"));
+    if(sched.length) return sched.length;
+    // Fallback: infer from standings (max GP among teams)
+    const st = state.season?.standings||{};
+    let maxGP = 0;
+    for(const tid of Object.keys(st)){
+      const t = st[tid]||{};
+      maxGP = Math.max(maxGP, (Number(t.W)||0) + (Number(t.L)||0));
+    }
+    return maxGP;
+  })();
   const minAB = Math.min(50, Math.max(10, Math.floor(seasonGamesPlayed*1.5) || 10));
 
   // MVP (hitters)
@@ -1659,9 +1670,10 @@ function renderAwards(){
   } else {
     const p=document.createElement("div");
     p.className="small";
-    p.textContent = seasonGamesPlayed>0
+    const hasBatting = Object.keys(state.season?.batting||{}).some(pid => (Number((state.season.batting[pid]||{}).AB)||0) > 0);
+    p.textContent = hasBatting
       ? `Not enough data yet for MVP (min ${minAB} AB).`
-      : "No batting stats yet.";
+      : "No batting stats yet."; 
     wrap.appendChild(p);
   }
 

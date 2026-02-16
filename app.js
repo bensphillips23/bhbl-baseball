@@ -1,4 +1,4 @@
-const APP_VERSION = "5.9.5";
+const APP_VERSION = "5.9.6";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -137,12 +137,7 @@ function getLineup(teamId){
 
 
 
-function ensurePitch(pid){
-  if(!pid) return;
-  if(!state.season.pitching[pid]){
-    state.season.pitching[pid] = { OUTS:0, H:0, R:0, HR:0, BB:0, SO:0, W:0, L:0, SV:0 };
-  }
-}
+function ensurePitch(pid, g){ if(!pid) return; pitchStore(g||game, pid); }
 function outsToIP(outs){
   const full = Math.floor(outs/3);
   const rem = outs % 3;
@@ -173,9 +168,7 @@ function currentPitcherId(g){
   return g?.pitcher?.[def] || "";
 }
 
-function ensureBat(pid){
-  if(!state.season.batting[pid]) state.season.batting[pid] = { AB:0,H:0,HR:0,RBI:0,R:0,BB:0,SO:0,"2B":0,"3B":0 };
-}
+function ensureBat(pid, g){ batStore(g||game, pid); }
 
 function ensureGameBat(pid){
   if(!game || !pid) return;
@@ -702,28 +695,7 @@ function endHalf(g){
 }
 
 
-function creditRun(pid){ if(!pid) return; ensureBat(pid); state.season.batting[pid].R += 1; }
-function rbi(bid){ if(!bid) return; ensureBat(bid); state.season.batting[bid].RBI += 1; }
-function scoreRun(g, bid){
-  // Rule (simplified): if the 3rd out is made on this play, no runs score.
-  if(g && g._outsBeforePlay===2 && g.outs>=3) return;
-  const side = battingSide(g);
-  g.score[side] += 1;
-  recordRunEvent();
-  // pitching: charge run to active pitcher (fielding team)
-  const rpid = currentPitcherId(g);
-  if(rpid){ ensurePitch(rpid); state.season.pitching[rpid].R += 1; }
-  if(bid) rbi(bid);
-}
-
-function walkAdvance(g, bid){
-  const b=g.bases.slice();
-  if(!b[0]){ g.bases[0]=bid; return; }
-  if(!b[1]){ g.bases[1]=b[0]; g.bases[0]=bid; return; }
-  if(!b[2]){ g.bases[2]=b[1]; g.bases[1]=b[0]; g.bases[0]=bid; return; }
-  creditRun(b[2]); scoreRun(g,bid);
-  g.bases[2]=b[1]; g.bases[1]=b[0]; g.bases[0]=bid;
-}
+function creditRun(pid){ if(!pid) return; const s = batStore(game, pid); s.R += 1; }
 function advanceAll(g, n, bid, batterBaseIndex){
   const old=g.bases.slice();
   const nb=[null,null,null];

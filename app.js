@@ -1,4 +1,4 @@
-const APP_VERSION = "5.9.3";
+const APP_VERSION = "5.9.4";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -2138,3 +2138,13 @@ document.addEventListener("click", (e)=>{
     openPlayerCard(t.getAttribute("data-pid"));
   }
 });
+function escapeHtml(s){
+  return String(s??"")
+    .split("&").join("&amp;")
+    .split("<").join("&lt;")
+    .split(">").join("&gt;")
+    .split('"').join("&quot;")
+    .split("'").join("&#39;");
+}
+
+

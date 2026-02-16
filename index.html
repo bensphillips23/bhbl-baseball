@@ -6,7 +6,7 @@
   <title>BHBL Dice Baseball</title>
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#0b1020" />
-  <link rel="stylesheet" href="styles.css?v=5.9.3" />
+  <link rel="stylesheet" href="styles.css?v=5.9.4" />
 </head>
 <body>
   <header>
@@ -107,11 +107,15 @@
         </div>
       </div>
     </div><div class="gcRight">
+
 <div class="card" id="liveBoxCard">
-          <div class="row" style="justify-content:space-between; align-items:center">
-            <h3 class="h3" style="margin:0">Live Box Score</h3>
-            <button id="toggleLiveBox" class="smallBtn">Hide</button>
-          </div>
+  <div class="row" style="justify-content:space-between; align-items:center">
+    <h3 class="h3" style="margin:0">Live Box Score</h3>
+    <button id="toggleLiveBox" class="smallBtn">Hide</button>
+  </div>
+  <div id="liveBox" class="liveBox"></div>
+  <div class="hint" style="margin-top:8px">Click a player name to open their Player Card.</div>
+</div>
 </div></div>
 <div id="liveBox" class="liveBox"></div>
           <div class="hint" style="margin-top:8px">Click a player name to open their Player Card.</div>
@@ -408,7 +412,7 @@
   </div>
 
 
-  <script src="app.js?v=5.9.3"></script>
+  <script src="app.js?v=5.9.4"></script>
 
   <div class="modal" id="playerEditModal" aria-hidden="true">
     <div class="modalCard">

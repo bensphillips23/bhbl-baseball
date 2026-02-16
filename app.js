@@ -1,4 +1,4 @@
-const APP_VERSION = "5.9.5";
+const APP_VERSION = "5.9.6";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -11,6 +11,15 @@ function inSeasonGame(g){ return isSeasonGame(g); }
 
 function _initBatLine(){ return {G:0,AB:0,H:0,R:0,RBI:0,HR:0,BB:0,SO:0,"2B":0,"3B":0}; }
 function _initPitchLine(){ return {GP:0,OUTS:0,H:0,R:0,ER:0,HR:0,BB:0,SO:0,W:0,L:0,SV:0}; }
+
+function num(v){ const n = Number(v); return Number.isFinite(n) ? n : 0; }
+function getER(line){ // earned runs fallback for older saves
+  if(!line) return 0;
+  if(line.ER !== undefined && Number.isFinite(Number(line.ER))) return Number(line.ER);
+  // if ER missing/invalid, fall back to total runs (no errors tracked)
+  return num(line.R);
+}
+
 
 // Always track per-game boxscore. Season games also mirror stats into season totals.
 function gameBat(g, pid){
@@ -1308,7 +1317,7 @@ function renderPitching(){
     const ipOuts=s.OUTS||0;
     const ip=outsToIP(ipOuts);
     const ipInnings = ipOuts/3;
-    const era = ipInnings>0 ? (9*(s.ER||0)/ipInnings) : 0;
+    const era = ipInnings>0 ? (9*getER(s)/ipInnings) : 0;
     const tr=document.createElement("tr");
     const vals=[p.name,p.role,(s.GP||0),ip,s.H,s.R,(s.ER||0),s.HR,s.BB,s.SO,s.W,s.L,s.SV,era.toFixed(2)];
     vals.forEach(v=>{ const td=document.createElement("td"); td.textContent=String(v); tr.appendChild(td); });
@@ -1402,7 +1411,7 @@ function renderLeaders(){
       const w  = Number(s.W||0);
       const l  = Number(s.L||0);
       const sv = Number(s.SV||0);
-      const er = Number(s.ER||0);
+      const er = getER(s);
       const era  = (outs>0) ? (9*er/ip) : 0;
       const whip = (outs>0) ? ((h+bb)/ip) : 0;
 
@@ -1525,9 +1534,12 @@ function renderAwards(){
     const ops=obp+slg;
     const avg=(ab>0)?(h/ab):0;
     // MVP formula: heavily favor AVG + power + production (HR/RBI)
-    const score=(avg*1000) + (hr*35) + (rbi*7) + (ops*100) + (h*2);
+    const st = state.season?.standings?.[m.teamId] || null;
+    const wp = st ? (num(st.wins)/(Math.max(1, num(st.wins)+num(st.losses)))) : 0;
+    const winBonus = wp * 30; // slight bump for winning teams
+    const score=(avg*1000) + (hr*35) + (rbi*7) + (ops*100) + (h*2) + winBonus;
     const m=batterMeta(pid);
-    hitters.push({pid, name:m.name, team:m.team, ab, avg, hr, rbi, r, ops, score});
+    hitters.push({pid, name:m.name, team:m.team, teamId:m.teamId, pos:m.pos, ab, avg, hr, rbi, r, ops, score});
   }
   hitters.sort((a,b)=>b.score-a.score);
   const mvp=hitters[0]||null;
@@ -1565,7 +1577,7 @@ function renderAwards(){
     const outs=Number(s.OUTS)||0;
     if(outs<=0) continue;
     const ip=outs/3;
-    const er=Number(s.ER)||0;
+    const er=getER(s);
     const h=Number(s.H)||0;
     const bb=Number(s.BB)||0;
     const so=Number(s.SO)||0;
@@ -1616,6 +1628,81 @@ function renderAwards(){
     ]);
     wrap.appendChild(awardCard("Reliever of the Year", winnerLine, topRows, ["#","Pitcher","Team","IP","SV","ERA","WHIP","SO","W"]));
   }
+
+  // ---------- All-Stars ----------
+  const allHeader=document.createElement("h3");
+  allHeader.className="h3";
+  allHeader.style.marginTop="18px";
+  allHeader.textContent="All-Stars";
+  wrap.appendChild(allHeader);
+
+  const allCard=document.createElement("div");
+  allCard.className="card";
+  allCard.style.background="#0b1229";
+
+  const normPos = (pos)=>{
+    const p=String(pos||"").toUpperCase();
+    if(["LF","CF","RF","OF","OUTFIELD"].includes(p)) return "OF";
+    if(["1B","2B","3B","SS","C"].includes(p)) return p;
+    return "";
+  };
+
+  const makeTable=(title, cols, rows)=>{
+    const sec=document.createElement("div");
+    sec.style.marginTop="10px";
+    const h=document.createElement("div");
+    h.className="pill";
+    h.innerHTML = `<b>${title}</b>`;
+    sec.appendChild(h);
+
+    const tableWrap=document.createElement("div");
+    tableWrap.className="tableWrap";
+    const tbl=document.createElement("table");
+    const trh=document.createElement("tr");
+    cols.forEach(c=>{ const th=document.createElement("th"); th.textContent=c; trh.appendChild(th); });
+    tbl.appendChild(trh);
+    rows.forEach((r,i)=>{
+      const tr=document.createElement("tr");
+      const vals=[String(i+1), ...r];
+      vals.forEach(v=>{ const td=document.createElement("td"); td.textContent=String(v); tr.appendChild(td); });
+      tbl.appendChild(tr);
+    });
+    tableWrap.appendChild(tbl);
+    sec.appendChild(tableWrap);
+    return sec;
+  };
+
+  // Hitters by position (use MVP score)
+  const byPos={C:[], "1B":[], "2B":[], SS:[], "3B":[], OF:[]};
+  for(const h of hitters){
+    const p=normPos(h.pos);
+    if(!p || !byPos[p]) continue;
+    byPos[p].push(h);
+  }
+  Object.keys(byPos).forEach(k=>byPos[k].sort((a,b)=>b.score-a.score));
+
+  const hitterCols=["#","Player","Team","AB","AVG","HR","RBI"];
+  const hitterRow = (x)=>[x.name, x.team, x.ab, x.avg.toFixed(3).replace(/^0/,""), x.hr, x.rbi];
+
+  const posOrder=[["C",3],["1B",3],["2B",3],["SS",3],["3B",3],["OF",6]];
+  for(const [pos, n] of posOrder){
+    const rows = (byPos[pos]||[]).slice(0,n).map(hitterRow);
+    if(rows.length) allCard.appendChild(makeTable(pos, hitterCols, rows));
+  }
+
+  // Pitchers (use Cy / Reliever formulas)
+  const sp = pitchers.filter(p=>String(p.role||"").toUpperCase()==="SP" && p.outs>=15);
+  sp.sort((a,b)=>b.score-a.score);
+  const spRows = sp.slice(0,4).map(p=>[p.name, p.team, outsToIP(p.outs), p.era.toFixed(2), p.whip.toFixed(2), p.so]);
+  if(spRows.length) allCard.appendChild(makeTable("SP", ["#","Pitcher","Team","IP","ERA","WHIP","SO"], spRows));
+
+  const rp = relievers.filter(p=>p.outs>=9);
+  rp.sort((a,b)=>(b.rScore||0)-(a.rScore||0));
+  const rpRows = rp.slice(0,4).map(p=>[p.name, p.team, outsToIP(p.outs), p.sv, p.era.toFixed(2), p.whip.toFixed(2), p.so]);
+  if(rpRows.length) allCard.appendChild(makeTable("RP", ["#","Pitcher","Team","IP","SV","ERA","WHIP","SO"], rpRows));
+
+  wrap.appendChild(allCard);
+
 }
 
 function renderStats(){

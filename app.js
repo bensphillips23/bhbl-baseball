@@ -1,4 +1,4 @@
-const APP_VERSION = "5.9.4";
+const APP_VERSION = "5.9.5";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -816,15 +816,15 @@ function renderLiveBox(){
   }
   const home = getTeam(game.homeId);
   const away = getTeam(game.awayId);
-  const b = (game.box && game.box.batting) ? game.box.batting : {};
-  const p = (game.box && game.box.pitching) ? game.box.pitching : {};
+    const b = null;
+    const p = null;
   const batCols = ["AB","H","HR","RBI","R","BB","SO"];
   const pitCols = ["IP","H","R","ER","HR","BB","SO"];
 
   const batTable = (teamId, title)=>{
     const lineup = getLineup(teamId) || [];
     const rows = lineup.map(pid=>{
-      const s = b[pid] || {AB:0,H:0,HR:0,RBI:0,R:0,BB:0,SO:0};
+      const s = (typeof batStore==="function") ? batStore(game,pid) : ((game.box&&game.box.batting)||{})[pid] || {AB:0,H:0,HR:0,RBI:0,R:0,BB:0,SO:0};
       return `<tr><td>${makePlayerLink(pid)}</td>${batCols.map(k=>`<td>${s[k]||0}</td>`).join("")}</tr>`;
     }).join("");
     return `<div class="hint" style="margin:8px 0 4px">${escapeHtml(title)}</div>
@@ -837,7 +837,7 @@ function renderLiveBox(){
   const pitTable = (teamId, title)=>{
     const pitchers = (getTeam(teamId)?.pitchers)||[];
     const rows = pitchers.map(pp=>{
-      const s = p[pp.id] || {OUTS:0,H:0,R:0,ER:0,HR:0,BB:0,SO:0};
+      const s = (typeof pitchStore==="function") ? pitchStore(game,pp.id) : ((game.box&&game.box.pitching)||{})[pp.id] || {OUTS:0,H:0,R:0,ER:0,HR:0,BB:0,SO:0};
       const ip = outsToIP(s.OUTS||0);
       return `<tr>
         <td>${makePlayerLink(pp.id, pp.name)}</td>

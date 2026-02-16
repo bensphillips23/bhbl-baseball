@@ -182,3 +182,8 @@ tr.leader td{font-weight:700;color:#dcfce7}
 .statBox{border:1px solid rgba(255,255,255,0.10); border-radius:12px; padding:10px;}
 .statBox b{display:block; font-size:12px; opacity:0.75;}
 .statBox span{font-size:16px; font-weight:800;}
+
+.container{max-width:1600px;margin:0 auto;width:100%;}
+
+/* Wider play layout */
+@media (min-width: 1200px){ .gameCenter{grid-template-columns: 1.4fr 1fr;} }

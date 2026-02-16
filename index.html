@@ -6,7 +6,7 @@
   <title>BHBL Dice Baseball</title>
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#0b1020" />
-  <link rel="stylesheet" href="styles.css?v=5.9.7" />
+  <link rel="stylesheet" href="styles.css?v=5.9.8" />
 </head>
 <body>
   <header>
@@ -20,6 +20,7 @@
       <button class="tab" data-tab="schedule">Schedule</button>
       <button class="tab" data-tab="standings">Standings</button>
       <button class="tab" data-tab="awards">Awards</button>
+      <button class="tab" data-tab="playoffs">Playoffs</button>
       <button class="tab" data-tab="stats">Stats</button>
       <button class="tab" data-tab="pitching">Pitching</button>
       <button class="tab" data-tab="backup">Backup</button>
@@ -191,6 +192,11 @@
     <section class="panel" id="schedule">
       <div class="card">
         <h2>Schedule</h2>
+        <div class="row" style="align-items:center">
+          <label>Division</label>
+          <select id="schedDivFilter"></select>
+          <span class="small">Filter games by division.</span>
+        </div>
         <div class="row">
 <label>Away</label><select id="schedAway"></select>
           <label>Home</label><select id="schedHome"></select>
@@ -227,6 +233,11 @@
           </select>
         </div>
         <div class="row">
+          <label>Matchups</label>
+          <select id="genMatchups">
+            <option value="all" selected>All (round-robin)</option>
+            <option value="interdiv">Inter-division only (no intra-division)</option>
+          </select>
           <label>Mode</label>
           <select id="genMode">
             <option value="replace" selected>Replace existing schedule</option>
@@ -235,10 +246,23 @@
           <button id="genSchedule" class="primary">Generate</button>
           <button id="clearSchedule" class="danger">Clear Schedule</button>
         </div>
-        <div class="hint">Round-robin generator. Game numbers are assigned automatically. For odd team counts, one team has a bye each round.</div>
+        <div class="hint">Generator assigns game numbers automatically. Inter-division only means teams will not play teams in their own division during the regular season.</div>
       </div>
 
 </section>
+
+
+    <section class="panel" id="playoffs">
+      <div class="card">
+        <h2>Playoffs</h2>
+        <div class="row">
+          <button id="genPlayoffs" class="primary">Generate Playoff Bracket</button>
+          <button id="resetPlayoffs" class="danger">Reset Playoffs</button>
+          <span class="small">Top 2 from each division. Best-of-3 each round. Same-division teams cannot meet until Round 2.</span>
+        </div>
+        <div id="playoffsWrap"></div>
+      </div>
+    </section>
 
 
     <section class="panel" id="standings">

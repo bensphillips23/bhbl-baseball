@@ -1,4 +1,4 @@
-const APP_VERSION = "5.9.7";
+const APP_VERSION = "5.9.8";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -92,7 +92,7 @@ function defaultState(){
   return { teams:[home,away], schedule:[],
   gameHistory:[],
   ticker:{ queue:[], last:{HR:null} },
-  season:{ batting:{}, pitching:{}, standings:{}, gameLog:[], structure:{ leagueName:"League", divisions:divs } } };
+  season:{ batting:{}, pitching:{}, standings:{}, gameLog:[], structure:{ leagueName:"League", divisions:divs }, playoffs:null } };
 }
 
 function loadState(){
@@ -121,7 +121,7 @@ function loadState(){
       if(g.homeScore===undefined) g.homeScore=0;
       if(g.playedAt===undefined) g.playedAt=null;
     }
-    if(!s.season) s.season={batting:{}, pitching:{}, standings:{}, gameLog:[], structure:null};
+    if(!s.season) s.season={batting:{}, pitching:{}, standings:{}, gameLog:[], structure:null, playoffs:null};
     if(!s.season.batting) s.season.batting={};
     if(!s.season.pitching) s.season.pitching={};
     if(!s.season.standings) s.season.standings={};
@@ -178,6 +178,9 @@ function loadState(){
     };
     for(const g of (s.schedule||[])) patchGameBox(g);
     for(const g of (s.season.gameLog||[])) patchGameBox(g);
+
+    // Playoffs migration
+    if(s.season.playoffs===undefined) s.season.playoffs = null;
     return s;
   } catch { return defaultState(); }
 }
@@ -462,16 +465,47 @@ function renderLineupEditor(){
 
 // -------- Schedule --------
 let selectedGameId = null;
+let scheduleDivFilter = "all";
+
+function fillScheduleDivFilter(){
+  const sel = el("schedDivFilter");
+  if(!sel) return;
+  ensureDivisions();
+  sel.innerHTML = "";
+  const all=document.createElement("option");
+  all.value = "all"; all.textContent = "All";
+  sel.appendChild(all);
+  for(const d of state.season.structure.divisions){
+    const o=document.createElement("option");
+    o.value = d.id;
+    o.textContent = d.name;
+    sel.appendChild(o);
+  }
+  sel.value = scheduleDivFilter;
+  sel.onchange = ()=>{ scheduleDivFilter = sel.value; renderSchedule(); };
+}
 function renderSchedule(){
   const list = el("scheduleList");
   list.innerHTML="";
+  fillScheduleDivFilter();
   const sched = state.schedule.slice().sort((a,b)=>(Number(a.gameNo||0)-Number(b.gameNo||0)));
   if(!sched.length){
     list.innerHTML = `<div class="hint" style="padding:10px">No games scheduled.</div>`;
     selectedGameId=null;
     return;
   }
-  for(const g of sched){
+
+  const filtered = (scheduleDivFilter==="all") ? sched : sched.filter(g=>{
+    const a=getTeam(g.awayId); const h=getTeam(g.homeId);
+    return (a?.divisionId===scheduleDivFilter) || (h?.divisionId===scheduleDivFilter);
+  });
+
+  if(!filtered.length){
+    list.innerHTML = `<div class="hint" style="padding:10px">No games for this division.</div>`;
+    return;
+  }
+
+  for(const g of filtered){
     const away = getTeam(g.awayId)?.name ?? "??";
     const home = getTeam(g.homeId)?.name ?? "??";
     const row = document.createElement("div");
@@ -542,6 +576,7 @@ function generateSchedule(){
   const rounds = Number(el("genRounds")?.value || 2);
   const series = Number(el("genSeries")?.value || 1);
   const mode = el("genMode")?.value || "replace";
+  const matchups = el("genMatchups")?.value || "all";
   const baseIds = state.teams.map(t=>t.id).filter(Boolean);
   if(baseIds.length < 2) return alert("Add at least 2 teams first.");
 
@@ -558,25 +593,58 @@ function generateSchedule(){
     gameNo = Math.max(gameNo, Number(g.gameNo||0)+1);
   }
 
-  for(let pass=0; pass<rounds; pass++){
-    const ids = baseIds.slice();
-    // invert home/away on odd passes to approximate home/away balance
-    if(pass % 2 === 1) ids.reverse();
+  ensureDivisions();
 
-    const rr = rrPairings(ids);
-    for(const pairs of rr){
-      for(const [homeId, awayId] of pairs){
-        for(let s=0; s<series; s++){
-          state.schedule.push({
-            id: uid(),
-            gameNo: gameNo++,
-            awayId,
-            homeId,
-            status:"scheduled",
-            awayScore:0,
-            homeScore:0,
-            playedAt:null
-          });
+  // Matchups: "all" (round-robin) or "interdiv" (no intra-division)
+  if(matchups==="interdiv"){
+    // Inter-division: each team plays every team outside its division (rounds times).
+    const teams = state.teams.slice();
+    for(let pass=0; pass<rounds; pass++){
+      for(let i=0;i<teams.length;i++){
+        for(let j=i+1;j<teams.length;j++){
+          const A=teams[i], B=teams[j];
+          if(!A || !B) continue;
+          if(A.divisionId && B.divisionId && A.divisionId===B.divisionId) continue; // skip intra-division
+          // Home/away balance: alternate by pass + pair index
+          const flip = ((pass + i + j) % 2)===1;
+          const homeId = flip ? B.id : A.id;
+          const awayId = flip ? A.id : B.id;
+          for(let s=0; s<series; s++){
+            state.schedule.push({
+              id: uid(),
+              gameNo: gameNo++,
+              awayId,
+              homeId,
+              status:"scheduled",
+              awayScore:0,
+              homeScore:0,
+              playedAt:null
+            });
+          }
+        }
+      }
+    }
+  } else {
+    for(let pass=0; pass<rounds; pass++){
+      const ids = baseIds.slice();
+      // invert home/away on odd passes to approximate home/away balance
+      if(pass % 2 === 1) ids.reverse();
+
+      const rr = rrPairings(ids);
+      for(const pairs of rr){
+        for(const [homeId, awayId] of pairs){
+          for(let s=0; s<series; s++){
+            state.schedule.push({
+              id: uid(),
+              gameNo: gameNo++,
+              awayId,
+              homeId,
+              status:"scheduled",
+              awayScore:0,
+              homeScore:0,
+              playedAt:null
+            });
+          }
         }
       }
     }
@@ -891,6 +959,7 @@ function renderPlay(){
     else el("startGame").textContent = "Start Game";
   }
   updateScoreboardUI();
+  if(el("finalizeGame")) el("finalizeGame").textContent = "Finalize Game";
     renderLiveBoxScore();
     return;
   }
@@ -917,6 +986,11 @@ function renderPlay(){
     if(game && isSeasonGame(game) && !game.final) el("startGame").textContent = "Start / Continue (Season)";
     else if(game && !game.final) el("startGame").textContent = "Continue Game";
     else el("startGame").textContent = "Start Game";
+  }
+  if(el("finalizeGame")){
+    if(game.seasonLink?.gameType==="playoff") el("finalizeGame").textContent = "Finalize Game (Playoffs)";
+    else if(isSeasonGame(game)) el("finalizeGame").textContent = "Finalize Game (Season)";
+    else el("finalizeGame").textContent = "Finalize Game";
   }
   updateScoreboardUI();
   renderLiveBoxScore();
@@ -1705,6 +1779,372 @@ function renderAwards(){
 
 }
 
+
+// -------- Playoffs --------
+function regularSeasonComplete(){
+  const sched = state.schedule||[];
+  return sched.length>0 && sched.every(g=>g.status==="final");
+}
+
+function teamDivisionId(teamId){ return getTeam(teamId)?.divisionId || null; }
+
+function getDivisionStandings(){
+  ensureDivisions();
+  const divs = state.season.structure.divisions;
+  const out=[];
+  for(const d of divs){
+    const teams = state.teams.filter(t=>t.divisionId===d.id).map(t=>t.id);
+    if(!teams.length) continue;
+    const rows = computeStandingsForTeamIds(teams);
+    out.push({division:d, rows});
+  }
+  return out;
+}
+
+function seedPlayoffTeams(){
+  // Top 2 from each division.
+  const divSt = getDivisionStandings();
+  const winners=[];
+  const runners=[];
+  for(const d of divSt){
+    if(d.rows[0]) winners.push(d.rows[0]);
+    if(d.rows[1]) runners.push(d.rows[1]);
+  }
+  if(winners.length<4 || runners.length<4) return null;
+
+  // Sort winners 1-4 by record (WPct then RD), runners 5-8 by record.
+  const sortRec = (a,b)=>{
+    if(b.WPct!==a.WPct) return b.WPct-a.WPct;
+    if(b.W!==a.W) return b.W-a.W;
+    if(b.RD!==a.RD) return b.RD-a.RD;
+    return b.RF-a.RF;
+  };
+  winners.sort(sortRec);
+  runners.sort(sortRec);
+
+  const seededW = winners.map((r,i)=>({seed:i+1, teamId:r.teamId, divisionId:teamDivisionId(r.teamId), rec:r}));
+  const seededR = runners.map((r,i)=>({seed:i+5, teamId:r.teamId, divisionId:teamDivisionId(r.teamId), rec:r}));
+  return {winners:seededW, runners:seededR};
+}
+
+function assignRunnersAvoidingDivisions(seededW, seededR){
+  // Backtracking assignment: each winner gets a runner not in same division.
+  const prefs = seededW
+    .slice()
+    .sort((a,b)=>a.seed-b.seed)
+    .map(w=>({
+      w,
+      options: seededR
+        .filter(r=>r.divisionId!==w.divisionId)
+        .slice()
+        .sort((a,b)=>b.seed-a.seed) // winner prefers lowest-ranked opponent
+    }));
+
+  const used = new Set();
+  const assign = [];
+
+  function dfs(i){
+    if(i>=prefs.length) return true;
+    const {w, options} = prefs[i];
+    for(const r of options){
+      if(used.has(r.teamId)) continue;
+      used.add(r.teamId);
+      assign.push({w, r});
+      if(dfs(i+1)) return true;
+      assign.pop();
+      used.delete(r.teamId);
+    }
+    return false;
+  }
+
+  if(!dfs(0)) return null;
+  // Return in seed order 1-4.
+  assign.sort((a,b)=>a.w.seed-b.w.seed);
+  return assign;
+}
+
+function generatePlayoffs(){
+  if(!regularSeasonComplete()){
+    if(!confirm("Regular season schedule is not fully final. Generate playoffs anyway?")) return;
+  }
+
+  const seeded = seedPlayoffTeams();
+  if(!seeded) return alert("Need at least 2 teams in each of 4 divisions to generate playoffs.");
+
+  const pairs = assignRunnersAvoidingDivisions(seeded.winners, seeded.runners);
+  if(!pairs) return alert("Could not build Round 1 without same-division matchups. Check division assignments.");
+
+  const series = [];
+  const mkSeries = (round, homeSeed, awaySeed)=>{
+    const homeId = homeSeed.teamId;
+    const awayId = awaySeed.teamId;
+    return {
+      id: uid(),
+      round,
+      bestOf: 3,
+      homeId,
+      awayId,
+      homeSeed: homeSeed.seed,
+      awaySeed: awaySeed.seed,
+      winsHome: 0,
+      winsAway: 0,
+      status: "active",
+      games: [] // {id, gameNo, homeId, awayId, status, homeScore, awayScore, playedAt}
+    };
+  };
+
+  // Round 1: seeds 1-4 host, paired with 5-8 avoiding same division.
+  for(const pr of pairs){
+    series.push(mkSeries(1, pr.w, pr.r));
+  }
+
+  state.season.playoffs = {
+    createdAt: new Date().toISOString(),
+    rounds: 3,
+    series,
+    championTeamId: null
+  };
+  saveState();
+  renderPlayoffs();
+  showTab("playoffs");
+}
+
+function resetPlayoffs(){
+  if(!state.season.playoffs) return;
+  if(!confirm("Reset playoffs? This will remove the bracket and results.")) return;
+  state.season.playoffs = null;
+  saveState();
+  renderPlayoffs();
+}
+
+function seriesIsComplete(s){
+  const need = Math.ceil((s.bestOf||3)/2);
+  return (s.winsHome>=need) || (s.winsAway>=need);
+}
+
+function seriesWinnerTeamId(s){
+  if(!seriesIsComplete(s)) return null;
+  return (s.winsHome > s.winsAway) ? s.homeId : s.awayId;
+}
+
+function seriesLoserTeamId(s){
+  if(!seriesIsComplete(s)) return null;
+  return (s.winsHome > s.winsAway) ? s.awayId : s.homeId;
+}
+
+function advancePlayoffsIfNeeded(){
+  const p = state.season.playoffs;
+  if(!p) return;
+  const r1 = p.series.filter(s=>s.round===1);
+  const r2 = p.series.filter(s=>s.round===2);
+  const r3 = p.series.filter(s=>s.round===3);
+
+  // Create Round 2 once Round 1 complete.
+  if(r2.length===0 && r1.length===4 && r1.every(seriesIsComplete)){
+    // Winners keep their original seed for home-field.
+    const winners = r1.map(s=>{
+      const wid = seriesWinnerTeamId(s);
+      const wSeed = (wid===s.homeId) ? s.homeSeed : s.awaySeed;
+      return {teamId: wid, seed: wSeed, divisionId: teamDivisionId(wid)};
+    }).sort((a,b)=>a.seed-b.seed);
+
+    // Pair as 1v4 and 2v3 by seed.
+    const mk = (a,b)=>({seed:a.seed, teamId:a.teamId, divisionId:a.divisionId});
+    const sA = {seed:winners[0].seed, teamId:winners[0].teamId, divisionId:winners[0].divisionId};
+    const sB = {seed:winners[3].seed, teamId:winners[3].teamId, divisionId:winners[3].divisionId};
+    const sC = {seed:winners[1].seed, teamId:winners[1].teamId, divisionId:winners[1].divisionId};
+    const sD = {seed:winners[2].seed, teamId:winners[2].teamId, divisionId:winners[2].divisionId};
+
+    const home1 = (sA.seed < sB.seed) ? sA : sB;
+    const away1 = (home1===sA) ? sB : sA;
+    const home2 = (sC.seed < sD.seed) ? sC : sD;
+    const away2 = (home2===sC) ? sD : sC;
+    p.series.push({
+      id: uid(), round:2, bestOf:3,
+      homeId: home1.teamId, awayId: away1.teamId,
+      homeSeed: home1.seed, awaySeed: away1.seed,
+      winsHome:0, winsAway:0, status:"active", games:[]
+    });
+    p.series.push({
+      id: uid(), round:2, bestOf:3,
+      homeId: home2.teamId, awayId: away2.teamId,
+      homeSeed: home2.seed, awaySeed: away2.seed,
+      winsHome:0, winsAway:0, status:"active", games:[]
+    });
+  }
+
+  // Create Round 3 once Round 2 complete.
+  if(r3.length===0 && p.series.filter(s=>s.round===2).length===2 && p.series.filter(s=>s.round===2).every(seriesIsComplete)){
+    const winners = p.series.filter(s=>s.round===2).map(s=>{
+      const wid = seriesWinnerTeamId(s);
+      const wSeed = (wid===s.homeId) ? s.homeSeed : s.awaySeed;
+      return {teamId: wid, seed: wSeed};
+    }).sort((a,b)=>a.seed-b.seed);
+    const home = winners[0];
+    const away = winners[1];
+    p.series.push({
+      id: uid(), round:3, bestOf:3,
+      homeId: home.teamId, awayId: away.teamId,
+      homeSeed: home.seed, awaySeed: away.seed,
+      winsHome:0, winsAway:0, status:"active", games:[]
+    });
+  }
+
+  // Champion
+  const finals = p.series.filter(s=>s.round===3);
+  if(finals.length===1 && seriesIsComplete(finals[0])){
+    p.championTeamId = seriesWinnerTeamId(finals[0]);
+  }
+}
+
+function startNextPlayoffGame(seriesId){
+  const p = state.season.playoffs;
+  if(!p) return;
+  const s = p.series.find(x=>x.id===seriesId);
+  if(!s) return;
+  if(seriesIsComplete(s)) return alert("Series is complete.");
+
+  const played = (s.games||[]).filter(g=>g.status==="final").length;
+  const gameIdx = played + 1;
+  // Home field: higher seed is "home" for Games 1 & 3.
+  const higherHome = s.homeSeed < s.awaySeed;
+  const hostHome = (gameIdx===2) ? !higherHome : higherHome;
+  const homeId = hostHome ? s.homeId : s.awayId;
+  const awayId = hostHome ? s.awayId : s.homeId;
+
+  // Create a playoff game record in the series.
+  const gobj = {
+    id: uid(),
+    gameNo: `${s.round}-${seriesId.slice(0,4)}-${gameIdx}`,
+    homeId, awayId,
+    status:"scheduled",
+    homeScore:0, awayScore:0,
+    playedAt:null,
+    seriesId,
+    round: s.round,
+    gameInSeries: gameIdx
+  };
+  s.games.push(gobj);
+  saveState();
+
+  // Start as a "season-like" game but mark as playoff.
+  game = newGame(homeId, awayId);
+  game.seasonLink = { scheduleId: gobj.id, gameNo: gobj.gameNo, gameType:"playoff", seriesId };
+  game.pitcher.home = getTeam(homeId)?.defaultSPId || "";
+  game.pitcher.away = getTeam(awayId)?.defaultSPId || "";
+  notePitcherEntry("home", game.pitcher.home);
+  notePitcherEntry("away", game.pitcher.away);
+  addLog(game, `Playoff game loaded: Round ${s.round}, Game ${gameIdx} (Best of 3).`);
+  saveState();
+  showTab("play");
+  renderPlay();
+}
+
+function finalizePlayoffGame(){
+  if(!game) return alert("No active game.");
+  if(!game.seasonLink || game.seasonLink.gameType!=="playoff") return alert("Not a playoff game.");
+  if(!game.final){
+    if(!confirm("Game is not final (may be tied). Finalize anyway?")) return;
+  }
+  const p = state.season.playoffs;
+  if(!p) return alert("No playoff bracket found.");
+  const seriesId = game.seasonLink.seriesId;
+  const s = p.series.find(x=>x.id===seriesId);
+  if(!s) return alert("Series not found.");
+
+  const gobj = (s.games||[]).find(x=>x.id===game.seasonLink.scheduleId);
+  if(!gobj) return alert("Playoff game record not found.");
+
+  gobj.status="final";
+  gobj.homeScore = game.score.home;
+  gobj.awayScore = game.score.away;
+  gobj.playedAt = new Date().toISOString();
+
+  // Update series wins
+  if(game.score.home > game.score.away) s.winsHome += (gobj.homeId===s.homeId) ? 1 : 0;
+  if(game.score.home > game.score.away) s.winsAway += (gobj.homeId===s.awayId) ? 1 : 0;
+  if(game.score.away > game.score.home) s.winsHome += (gobj.awayId===s.homeId) ? 1 : 0;
+  if(game.score.away > game.score.home) s.winsAway += (gobj.awayId===s.awayId) ? 1 : 0;
+
+  if(seriesIsComplete(s)) s.status="final";
+  advancePlayoffsIfNeeded();
+  saveState();
+  renderPlayoffs();
+  alert(`Finalized playoff game: ${getTeam(gobj.awayId)?.name||"Away"} ${gobj.awayScore} - ${gobj.homeScore} ${getTeam(gobj.homeId)?.name||"Home"}`);
+}
+
+function renderPlayoffs(){
+  const wrap = el("playoffsWrap");
+  if(!wrap) return;
+  wrap.innerHTML="";
+  const p = state.season.playoffs;
+  if(!p){
+    wrap.innerHTML = `<div class="hint" style="padding:10px">No playoff bracket yet. Click “Generate Playoff Bracket”.</div>`;
+    return;
+  }
+  advancePlayoffsIfNeeded();
+  const champ = p.championTeamId ? (getTeam(p.championTeamId)?.name || "?") : null;
+  if(champ){
+    const h=document.createElement("div");
+    h.className="pill";
+    h.innerHTML = `<b>Champion:</b> ${champ}`;
+    wrap.appendChild(h);
+  }
+
+  const rounds=[1,2,3];
+  for(const r of rounds){
+    const rs = p.series.filter(s=>s.round===r);
+    if(!rs.length) continue;
+    const h=document.createElement("h3");
+    h.className="h3";
+    h.textContent = (r===1?"Round 1":(r===2?"Round 2":"Finals"));
+    wrap.appendChild(h);
+
+    for(const s of rs){
+      const card=document.createElement("div");
+      card.className="card";
+      card.style.background="#0b1229";
+      const homeName = getTeam(s.homeId)?.name || "?";
+      const awayName = getTeam(s.awayId)?.name || "?";
+      const line = document.createElement("div");
+      line.className="row";
+      line.style.justifyContent="space-between";
+      const score = `${homeName} (${s.homeSeed}) ${s.winsHome} — ${s.winsAway} ${awayName} (${s.awaySeed})`;
+      line.innerHTML = `<div><b>${score}</b></div><div class="small">Best of 3</div>`;
+      card.appendChild(line);
+
+      const btnRow=document.createElement("div");
+      btnRow.className="row";
+      const btn=document.createElement("button");
+      btn.className="primary";
+      btn.textContent = seriesIsComplete(s) ? "Series Complete" : "Play Next Game";
+      btn.disabled = seriesIsComplete(s);
+      btn.onclick = ()=>startNextPlayoffGame(s.id);
+      btnRow.appendChild(btn);
+      card.appendChild(btnRow);
+
+      if((s.games||[]).length){
+        const tWrap=document.createElement("div");
+        tWrap.className="tableWrap";
+        const tbl=document.createElement("table");
+        const trh=document.createElement("tr");
+        ["Game","Away","Home","Result"].forEach(c=>{ const th=document.createElement("th"); th.textContent=c; trh.appendChild(th); });
+        tbl.appendChild(trh);
+        for(const g of s.games){
+          const tr=document.createElement("tr");
+          const res = g.status==="final" ? `${g.awayScore}-${g.homeScore}` : "Scheduled";
+          [g.gameInSeries, (getTeam(g.awayId)?.name||"?"), (getTeam(g.homeId)?.name||"?"), res].forEach(v=>{ const td=document.createElement("td"); td.textContent=String(v); tr.appendChild(td); });
+          tbl.appendChild(tr);
+        }
+        tWrap.appendChild(tbl);
+        card.appendChild(tWrap);
+      }
+
+      wrap.appendChild(card);
+    }
+  }
+}
+
 function renderStats(){
 
   const team=getTeam(el("statsTeam").value);
@@ -1749,6 +2189,7 @@ function importJSON(){
       renderLeaders();
       renderStandings();
       renderAwards();
+      renderPlayoffs();
       renderPlay();
       renderPitching();
       alert("Imported!");
@@ -1763,6 +2204,7 @@ function showTab(tab){
   if(tab==="schedule") renderSchedule();
   if(tab==="standings") renderStandings();
   if(tab==="awards") renderAwards();
+  if(tab==="playoffs") renderPlayoffs();
   if(tab==="stats") { renderStats(); renderLeaders(); }
   if(tab==="pitching") renderPitching();
 }
@@ -1851,6 +2293,7 @@ function startSeasonGameFromSchedule(sched){
 
 function finalizeSeasonGame(){
   if(!game) return alert("No active game.");
+  if(game.seasonLink?.gameType==="playoff") return finalizePlayoffGame();
   if(!isSeasonGame(game)) return alert("This is a Play Mode game (not scheduled). Season stats are not recorded—schedule it first.");
   if(!game.final){
     if(!confirm("Game is not final (may be tied). Finalize anyway?")) return;
@@ -2398,13 +2841,14 @@ el("simSelected").onclick=()=>{
   el("resetStats").onclick=()=>{
     if(!confirm("Reset ALL season stats AND mark scheduled games unplayed?")) return;
     const structure = state.season?.structure ? JSON.parse(JSON.stringify(state.season.structure)) : { leagueName:"League", divisions:[] };
-    state.season={batting:{}, pitching:{}, standings:{}, gameLog:[], structure};
+    state.season={batting:{}, pitching:{}, standings:{}, gameLog:[], structure, playoffs:null};
     for(const g of state.schedule){ g.status="scheduled"; g.homeScore=0; g.awayScore=0; g.playedAt=null; }
     saveState();
     renderStats();
     renderSchedule();
     renderStandings();
     renderAwards();
+    renderPlayoffs();
   };
 
   el("exportJson").onclick=exportJSON;
@@ -2414,6 +2858,8 @@ el("simSelected").onclick=()=>{
   // Schedule generator
   if(el("genSchedule")) el("genSchedule").onclick=generateSchedule;
   if(el("clearSchedule")) el("clearSchedule").onclick=clearScheduleAll;
+  if(el("genPlayoffs")) el("genPlayoffs").onclick=generatePlayoffs;
+  if(el("resetPlayoffs")) el("resetPlayoffs").onclick=resetPlayoffs;
 
   // Exports
   if(el("exportSeasonCsv")) el("exportSeasonCsv").onclick=exportSeasonCsv;

@@ -622,14 +622,22 @@ function generateSchedule(){
   }
 
   // Standalone division schedule: teams ONLY play teams in their division.
-  // Each pair plays `gamesPerOpp` games, alternating home/away (balanced when even).
+  // IMPORTANT UX: don't stack all games vs the same opponent back-to-back.
+  // We generate a round-robin "cycle" (circle method), then repeat that cycle
+  // `gamesPerOpp` times. For 4 teams, each cycle is 3 rounds (2 games/round).
+  // Repeating the cycle 6x yields 6 meetings vs each opponent (18 games/team),
+  // and naturally rotates opponents so you don't play the same team 6 straight.
   const ids = divTeamIds.slice();
-  for(let i=0;i<ids.length;i++){
-    for(let j=i+1;j<ids.length;j++){
-      const A = ids[i], B = ids[j];
-      for(let k=0;k<gamesPerOpp;k++){
-        const homeId = (k % 2 === 0) ? A : B;
-        const awayId = (k % 2 === 0) ? B : A;
+  const baseRounds = rrPairings(ids);
+  for(let rep=0; rep<gamesPerOpp; rep++){
+    for(const round of baseRounds){
+      for(const pair of round){
+        let homeId = pair[0];
+        let awayId = pair[1];
+        // Flip home/away each repetition for balance.
+        if(rep % 2 === 1){
+          const tmp = homeId; homeId = awayId; awayId = tmp;
+        }
         state.schedule.push({
           id: uid(),
           gameNo: gameNo++,

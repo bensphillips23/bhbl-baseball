@@ -1,4 +1,4 @@
-const APP_VERSION = "5.9.11";
+const APP_VERSION = "5.9.12";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -529,7 +529,8 @@ function renderSchedule(){
     const home = getTeam(g.homeId)?.name ?? "??";
     const row = document.createElement("div");
     row.className = "schedRow" + (g.id===selectedGameId ? " selected" : "");
-    const status = g.status==="final" ? `<span class="final">Final</span> ${g.awayScore}-${g.homeScore}` : `<span class="meta">Scheduled</span>`;
+    const inn = (g.innings && Number(g.innings)>9) ? ` (${g.innings})` : "";
+    const status = g.status==="final" ? `<span class="final">Final</span> ${g.awayScore}-${g.homeScore}${inn}` : `<span class="meta">Scheduled</span>`;
     row.innerHTML = `<div>Game ${g.gameNo ?? ""}</div><div><b>${away}</b></div><div><b>${home}</b></div><div>${status}</div>`;
     row.onclick = ()=>{ selectedGameId = g.id; renderSchedule();
     renderStandings(); };
@@ -2508,6 +2509,7 @@ function finalizeSeasonGame(){
   sched.awayScore = game.score.away;
   sched.homeScore = game.score.home;
   sched.playedAt = new Date().toISOString();
+  sched.innings = game.inning;
 
   // Save boxscore snapshot for exports
   if(!state.gameHistory) state.gameHistory=[];
@@ -2547,32 +2549,82 @@ function finalizeSeasonGame(){
 
 // Schedule sim: simple uses doRoll loop in a temp game
 function simulateScheduledGame(gameObj){
+  // Sim a scheduled season game using the SAME engine rules as Play mode:
+  // - Season stats recorded (seasonLink set)
+  // - No ties ever (extras until winner)
+  // - Pitching/batting boxscore tracked, decisions applied, GP incremented, gameHistory snapshot saved
   const g = newGame(gameObj.homeId, gameObj.awayId);
-  let safety=0;
-  while(g.inning<=9 && safety<5000){
-    if(g.outs>=3){ endHalf(g); safety++; continue; }
-    const side = battingSide(g);
+  g.seasonLink = { scheduleId: gameObj.id, gameNo: gameObj.gameNo };
+
+  // default pitchers
+  g.pitcher.home = getTeam(gameObj.homeId)?.defaultSPId || "";
+  g.pitcher.away = getTeam(gameObj.awayId)?.defaultSPId || "";
+
+  // Note pitcher entries (needs global game)
+  const _old = game;
+  game = g;
+  if(g.pitcher.home) notePitcherEntry("home", g.pitcher.home);
+  if(g.pitcher.away) notePitcherEntry("away", g.pitcher.away);
+
+  let safety = 0;
+  while(!g.final && safety < 50000){
+    if(g.outs >= 3){ endHalf(g); safety++; continue; }
     const bid = batterId(g);
     const batter = getPlayer(bid);
     const roll = roll2d6();
     const code = CHARTS[batter.hr]?.[batter.tier]?.[roll.total];
     if(!code){ safety++; continue; }
 
-    // temporarily swap global game for apply()
-    const oldGame = game;
-    game = g;
     apply(code, roll);
-    game = oldGame;
+    creditPitchFromCode(g, code);
 
-    if(g.outs>=3) endHalf(g);
+    if(g.outs >= 3) endHalf(g);
     safety++;
   }
-  gameObj.status="final";
-  gameObj.homeScore=g.score.home;
-  gameObj.awayScore=g.score.away;
-  gameObj.playedAt=new Date().toISOString();
+  game = _old;
+
+  if(!g.final){
+    console.warn("Sim safety stop reached; forcing final.");
+    g.final = true;
+  }
+
+  // Write back to schedule
+  gameObj.status = "final";
+  gameObj.homeScore = g.score.home;
+  gameObj.awayScore = g.score.away;
+  gameObj.playedAt = new Date().toISOString();
+  gameObj.innings = g.inning;
+
+  // Save boxscore snapshot for exports/history
+  if(!state.gameHistory) state.gameHistory = [];
+  state.gameHistory.push({
+    id: uid(),
+    gameNo: gameObj.gameNo,
+    awayId: g.awayId,
+    homeId: g.homeId,
+    awayScore: g.score.away,
+    homeScore: g.score.home,
+    innings: g.inning,
+    playedAt: gameObj.playedAt,
+    box: g.box ? structuredClone(g.box) : { batting:{}, pitching:{} }
+  });
+  state.gameHistory = state.gameHistory.slice(-500);
+  checkLeaderChanges();
+
+  // Decisions + season pitching W/L/SV + GP
+  const dec = computePitcherDecisions(g);
+  g.decision.finalDecisions = dec;
+  applyPitcherDecisionsToSeason(dec);
+
+  const appeared = Object.keys(g.decision?.pitcherEntries || {});
+  for(const pid of appeared){
+    if(!pid) continue;
+    ensurePitch(pid);
+    state.season.pitching[pid].GP = Number(state.season.pitching[pid].GP || 0) + 1;
+  }
+
   saveState();
-  return {homeScore:g.score.home, awayScore:g.score.away};
+  return { homeScore: g.score.home, awayScore: g.score.away };
 }
 
 

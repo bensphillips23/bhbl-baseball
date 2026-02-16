@@ -1,4 +1,4 @@
-const APP_VERSION = "5.9.9";
+const APP_VERSION = "5.9.11";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -47,6 +47,21 @@ function seasonPitch(pid){
   return state.season.pitching[pid];
 }
 
+function playoffBat(pid){
+  state.season = state.season || {};
+  state.season.playoffStats = state.season.playoffStats || {batting:{}, pitching:{}};
+  state.season.playoffStats.batting = state.season.playoffStats.batting || {};
+  if(state.season.playoffStats.batting[pid]==null) state.season.playoffStats.batting[pid]=_initBatLine();
+  return state.season.playoffStats.batting[pid];
+}
+function playoffPitch(pid){
+  state.season = state.season || {};
+  state.season.playoffStats = state.season.playoffStats || {batting:{}, pitching:{}};
+  state.season.playoffStats.pitching = state.season.playoffStats.pitching || {};
+  if(state.season.playoffStats.pitching[pid]==null) state.season.playoffStats.pitching[pid]=_initPitchLine();
+  return state.season.playoffStats.pitching[pid];
+}
+
 function bump(obj, key, n=1){ obj[key] = (Number(obj[key])||0) + n; }
 /*** end helpers ***/
 
@@ -92,7 +107,7 @@ function defaultState(){
   return { teams:[home,away], schedule:[],
   gameHistory:[],
   ticker:{ queue:[], last:{HR:null} },
-  season:{ batting:{}, pitching:{}, standings:{}, gameLog:[], structure:{ leagueName:"League", divisions:divs }, playoffs:null } };
+  season:{ batting:{}, pitching:{}, standings:{}, gameLog:[], structure:{ leagueName:"League", divisions:divs }, playoffs:null, playoffStats:{ batting:{}, pitching:{} } } };
 }
 
 function loadState(){
@@ -121,7 +136,7 @@ function loadState(){
       if(g.homeScore===undefined) g.homeScore=0;
       if(g.playedAt===undefined) g.playedAt=null;
     }
-    if(!s.season) s.season={batting:{}, pitching:{}, standings:{}, gameLog:[], structure:null, playoffs:null};
+    if(!s.season) s.season={batting:{}, pitching:{}, standings:{}, gameLog:[], structure:null, playoffs:null, playoffStats:{batting:{}, pitching:{}}};
     if(!s.season.batting) s.season.batting={};
     if(!s.season.pitching) s.season.pitching={};
     if(!s.season.standings) s.season.standings={};
@@ -181,6 +196,9 @@ function loadState(){
 
     // Playoffs migration
     if(s.season.playoffs===undefined) s.season.playoffs = null;
+    if(!s.season.playoffStats) s.season.playoffStats = { batting:{}, pitching:{} };
+    if(!s.season.playoffStats.batting) s.season.playoffStats.batting = {};
+    if(!s.season.playoffStats.pitching) s.season.playoffStats.pitching = {};
     return s;
   } catch { return defaultState(); }
 }
@@ -2062,6 +2080,50 @@ function finalizePlayoffGame(){
   gobj.awayScore = game.score.away;
   gobj.playedAt = new Date().toISOString();
 
+  // ---- Playoff stats (separate from regular season) ----
+  // Batting: sum per-game box lines into playoff totals.
+  if(game.box?.batting){
+    for(const pid of Object.keys(game.box.batting)){
+      const line = game.box.batting[pid];
+      if(!line) continue;
+      const ps = playoffBat(pid);
+      for(const k of Object.keys(_initBatLine())){
+        ps[k] = num(ps[k]) + num(line[k]);
+      }
+      // games played for hitters
+      ps.G = num(ps.G) + 1;
+    }
+  }
+  // Pitching: sum per-game pitching lines into playoff totals.
+  if(game.box?.pitching){
+    for(const pid of Object.keys(game.box.pitching)){
+      const line = game.box.pitching[pid];
+      if(!line) continue;
+      const ps = playoffPitch(pid);
+      for(const k of Object.keys(_initPitchLine())){
+        // GP handled below; W/L/SV handled via decisions
+        if(["GP","W","L","SV"].includes(k)) continue;
+        ps[k] = num(ps[k]) + num(line[k]);
+      }
+    }
+  }
+
+  // Pitcher decisions for playoffs (W/L/SV)
+  const dec = computePitcherDecisions(game);
+  if(dec?.winner){
+    if(dec.winPid){ const ps=playoffPitch(dec.winPid); ps.W = num(ps.W)+1; }
+    if(dec.lossPid){ const ps=playoffPitch(dec.lossPid); ps.L = num(ps.L)+1; }
+    if(dec.savePid){ const ps=playoffPitch(dec.savePid); ps.SV = num(ps.SV)+1; }
+  }
+
+  // GP for pitchers who appeared
+  const appeared = Object.keys(game.decision?.pitcherEntries || {});
+  for(const pid of appeared){
+    if(!pid) continue;
+    const ps = playoffPitch(pid);
+    ps.GP = num(ps.GP) + 1;
+  }
+
   // Update series wins
   if(game.score.home > game.score.away) s.winsHome += (gobj.homeId===s.homeId) ? 1 : 0;
   if(game.score.home > game.score.away) s.winsAway += (gobj.homeId===s.awayId) ? 1 : 0;
@@ -2082,6 +2144,7 @@ function renderPlayoffs(){
   const p = state.season.playoffs;
   if(!p){
     wrap.innerHTML = `<div class="hint" style="padding:10px">No playoff bracket yet. Click “Generate Playoff Bracket”.</div>`;
+    renderPlayoffLeaders();
     return;
   }
   advancePlayoffsIfNeeded();
@@ -2093,57 +2156,195 @@ function renderPlayoffs(){
     wrap.appendChild(h);
   }
 
-  const rounds=[1,2,3];
-  for(const r of rounds){
-    const rs = p.series.filter(s=>s.round===r);
-    if(!rs.length) continue;
-    const h=document.createElement("h3");
-    h.className="h3";
-    h.textContent = (r===1?"Round 1":(r===2?"Round 2":"Finals"));
-    wrap.appendChild(h);
+  // --- Bracket visual ---
+  const r1 = p.series.filter(s=>s.round===1).slice().sort((a,b)=>a.homeSeed-b.homeSeed);
+  const r2 = p.series.filter(s=>s.round===2).slice().sort((a,b)=>a.homeSeed-b.homeSeed);
+  const r3 = p.series.filter(s=>s.round===3).slice().sort((a,b)=>a.homeSeed-b.homeSeed);
 
-    for(const s of rs){
-      const card=document.createElement("div");
-      card.className="card";
-      card.style.background="#0b1229";
-      const homeName = getTeam(s.homeId)?.name || "?";
-      const awayName = getTeam(s.awayId)?.name || "?";
-      const line = document.createElement("div");
-      line.className="row";
-      line.style.justifyContent="space-between";
-      const score = `${homeName} (${s.homeSeed}) ${s.winsHome} — ${s.winsAway} ${awayName} (${s.awaySeed})`;
-      line.innerHTML = `<div><b>${score}</b></div><div class="small">Best of 3</div>`;
-      card.appendChild(line);
+  const bracket=document.createElement("div");
+  bracket.className="bracket";
 
-      const btnRow=document.createElement("div");
-      btnRow.className="row";
-      const btn=document.createElement("button");
-      btn.className="primary";
-      btn.textContent = seriesIsComplete(s) ? "Series Complete" : "Play Next Game";
-      btn.disabled = seriesIsComplete(s);
-      btn.onclick = ()=>startNextPlayoffGame(s.id);
-      btnRow.appendChild(btn);
-      card.appendChild(btnRow);
+  const mkRoundCol = (title)=>{
+    const col=document.createElement("div");
+    col.className="bracketRound";
+    const h=document.createElement("div");
+    h.className="bracketRoundTitle";
+    h.textContent=title;
+    col.appendChild(h);
+    return col;
+  };
 
-      if((s.games||[]).length){
-        const tWrap=document.createElement("div");
-        tWrap.className="tableWrap";
-        const tbl=document.createElement("table");
-        const trh=document.createElement("tr");
-        ["Game","Away","Home","Result"].forEach(c=>{ const th=document.createElement("th"); th.textContent=c; trh.appendChild(th); });
-        tbl.appendChild(trh);
-        for(const g of s.games){
-          const tr=document.createElement("tr");
-          const res = g.status==="final" ? `${g.awayScore}-${g.homeScore}` : "Scheduled";
-          [g.gameInSeries, (getTeam(g.awayId)?.name||"?"), (getTeam(g.homeId)?.name||"?"), res].forEach(v=>{ const td=document.createElement("td"); td.textContent=String(v); tr.appendChild(td); });
-          tbl.appendChild(tr);
-        }
-        tWrap.appendChild(tbl);
-        card.appendChild(tWrap);
+  const mkMatch = (s)=>{
+    const box=document.createElement("div");
+    box.className="match";
+    const homeName=getTeam(s.homeId)?.name||"?";
+    const awayName=getTeam(s.awayId)?.name||"?";
+    const need=Math.ceil((s.bestOf||3)/2);
+    const done=seriesIsComplete(s);
+    box.innerHTML = `
+      <div class="matchRow ${done && seriesWinnerTeamId(s)===s.homeId?"winner":""}">
+        <span class="seed">${s.homeSeed}</span>
+        <span class="team">${homeName}</span>
+        <span class="wins">${s.winsHome}</span>
+      </div>
+      <div class="matchRow ${done && seriesWinnerTeamId(s)===s.awayId?"winner":""}">
+        <span class="seed">${s.awaySeed}</span>
+        <span class="team">${awayName}</span>
+        <span class="wins">${s.winsAway}</span>
+      </div>
+      <div class="matchMeta">
+        <span class="small">Best of ${s.bestOf||3} · First to ${need}</span>
+      </div>
+    `;
+
+    const btn=document.createElement("button");
+    btn.className="primary";
+    btn.textContent = done ? "Series Complete" : "Play Next Game";
+    btn.disabled = done;
+    btn.onclick = ()=>startNextPlayoffGame(s.id);
+    box.appendChild(btn);
+
+    if((s.games||[]).length){
+      const list=document.createElement("div");
+      list.className="matchGames";
+      for(const g of s.games){
+        const res = g.status==="final" ? `${getTeam(g.awayId)?.name||"?"} ${g.awayScore} @ ${getTeam(g.homeId)?.name||"?"} ${g.homeScore}` : `${getTeam(g.awayId)?.name||"?"} @ ${getTeam(g.homeId)?.name||"?"} (sched)`;
+        const d=document.createElement("div");
+        d.className="small";
+        d.textContent = `G${g.gameInSeries}: ${res}`;
+        list.appendChild(d);
       }
-
-      wrap.appendChild(card);
+      box.appendChild(list);
     }
+
+    return box;
+  };
+
+  const col1=mkRoundCol("Round 1");
+  const col2=mkRoundCol("Round 2");
+  const col3=mkRoundCol("Finals");
+
+  // Layout slots: 12-row grid. Round1 matches occupy rows (1,4,7,10) span 3.
+  // Round2 occupy rows (2,8) span 6. Finals occupies full height.
+  const place = (col, node, rowStart, rowSpan)=>{
+    node.style.gridRow = `${rowStart} / span ${rowSpan}`;
+    col.appendChild(node);
+  };
+
+  for(let i=0;i<r1.length;i++) place(col1, mkMatch(r1[i]), 1 + i*3, 3);
+  for(let i=0;i<r2.length;i++) place(col2, mkMatch(r2[i]), 2 + i*6, 6);
+  if(r3[0]) place(col3, mkMatch(r3[0]), 1, 12);
+
+  bracket.appendChild(col1);
+  bracket.appendChild(col2);
+  bracket.appendChild(col3);
+  wrap.appendChild(bracket);
+
+  renderPlayoffLeaders();
+}
+
+function renderPlayoffLeaders(){
+  const wrap = el("playoffLeadersWrap");
+  if(!wrap) return;
+  const stats = state.season?.playoffStats || {batting:{}, pitching:{}};
+  const bat = stats.batting || {};
+  const pit = stats.pitching || {};
+
+  const typeSel = el("poLeadType");
+  const catSel  = el("poLeadCat");
+  const tbl     = el("poLeadTable");
+  if(!typeSel || !catSel || !tbl) return;
+
+  // Rebuild category options based on type
+  const type = typeSel.value || "bat";
+  const batCats = ["OPS","AVG","HR","RBI","H","R","OBP","SLG"];
+  const pitCats = ["ERA","WHIP","SO","SV","W","IP","GP"];
+  const cats = (type==="pit") ? pitCats : batCats;
+  if(!cats.includes(catSel.value)) catSel.value = cats[0];
+  catSel.innerHTML = "";
+  cats.forEach(c=>{ const o=document.createElement("option"); o.value=c; o.textContent=c; catSel.appendChild(o); });
+  catSel.value = catSel.value || cats[0];
+
+  const cat = catSel.value;
+  const rows=[];
+
+  if(type==="bat"){
+    for(const t of state.teams){
+      for(const p of (t.roster||[])){
+        const s = bat[p.id];
+        if(!s) continue;
+        const ab=num(s.AB), h=num(s.H), bb=num(s.BB), hr=num(s.HR), r=num(s.R), rbi=num(s.RBI);
+        const dbl=num(s["2B"]), tpl=num(s["3B"]);
+        const avg=(ab>0)?(h/ab):0;
+        const obp=((ab+bb)>0)?((h+bb)/(ab+bb)):0;
+        const singles=Math.max(0, h - dbl - tpl - hr);
+        const tb = singles + 2*dbl + 3*tpl + 4*hr;
+        const slg=(ab>0)?(tb/ab):0;
+        const ops=obp+slg;
+        let val=0;
+        if(cat==="AVG") val=avg;
+        else if(cat==="OBP") val=obp;
+        else if(cat==="SLG") val=slg;
+        else if(cat==="OPS") val=ops;
+        else if(cat==="HR") val=hr;
+        else if(cat==="RBI") val=rbi;
+        else if(cat==="H") val=h;
+        else if(cat==="R") val=r;
+        if(["AVG","OBP","SLG","OPS"].includes(cat) && ab<=0) continue;
+        rows.push({name:p.name, team:t.name, ab, val});
+      }
+    }
+    rows.sort((a,b)=>{
+      if(["AVG","OBP","SLG","OPS"].includes(cat)) return b.val-a.val;
+      return (b.val-a.val) || (b.ab-a.ab);
+    });
+    tbl.innerHTML="";
+    const trh=document.createElement("tr");
+    ["#","Player","Team","AB",cat].forEach(h=>{ const th=document.createElement("th"); th.textContent=h; trh.appendChild(th); });
+    tbl.appendChild(trh);
+    rows.slice(0,10).forEach((r,i)=>{
+      const tr=document.createElement("tr");
+      const displayVal = (["AVG","OBP","SLG","OPS"].includes(cat)) ? r.val.toFixed(3).replace(/^0/,"") : String(r.val);
+      [i+1, r.name, r.team, r.ab, displayVal].forEach(v=>{ const td=document.createElement("td"); td.textContent=String(v); tr.appendChild(td); });
+      tbl.appendChild(tr);
+    });
+  } else {
+    for(const t of state.teams){
+      for(const pch of (t.pitchers||[])){
+        const s = pit[pch.id];
+        if(!s) continue;
+        const outs=num(s.OUTS);
+        const ip=outs/3;
+        const h=num(s.H), bb=num(s.BB), so=num(s.SO), w=num(s.W), sv=num(s.SV);
+        const er=getER(s);
+        const era = (outs>0)?(9*er/ip):0;
+        const whip=(outs>0)?((h+bb)/ip):0;
+        let val=0;
+        if(cat==="ERA") val=era;
+        else if(cat==="WHIP") val=whip;
+        else if(cat==="SO") val=so;
+        else if(cat==="W") val=w;
+        else if(cat==="SV") val=sv;
+        else if(cat==="IP") val=ip;
+        else if(cat==="GP") val=num(s.GP);
+        if(["ERA","WHIP"].includes(cat) && outs<=0) continue;
+        rows.push({name:pch.name, team:t.name, outs, val});
+      }
+    }
+    rows.sort((a,b)=>{
+      if(["ERA","WHIP"].includes(cat)) return a.val-b.val;
+      return (b.val-a.val) || (b.outs-a.outs);
+    });
+    tbl.innerHTML="";
+    const trh=document.createElement("tr");
+    ["#","Pitcher","Team","IP",cat].forEach(h=>{ const th=document.createElement("th"); th.textContent=h; trh.appendChild(th); });
+    tbl.appendChild(trh);
+    rows.slice(0,10).forEach((r,i)=>{
+      const tr=document.createElement("tr");
+      const displayVal = (["ERA","WHIP"].includes(cat)) ? r.val.toFixed(2) : String(r.val);
+      [i+1, r.name, r.team, outsToIP(r.outs), displayVal].forEach(v=>{ const td=document.createElement("td"); td.textContent=String(v); tr.appendChild(td); });
+      tbl.appendChild(tr);
+    });
   }
 }
 
@@ -2823,6 +3024,8 @@ el("simSelected").onclick=()=>{
   if(el("leadBatCat")) el("leadBatCat").onchange=renderLeaders;
   if(el("leadPitCat")) el("leadPitCat").onchange=renderLeaders;
   if(el("leadTopN")) el("leadTopN").onchange=renderLeaders;
+  if(el("poLeadType")) el("poLeadType").onchange=renderPlayoffLeaders;
+  if(el("poLeadCat")) el("poLeadCat").onchange=renderPlayoffLeaders;
   if(el("pitchTeam")) el("pitchTeam").onchange=renderPitching;
   if(el("recalcStandings")) el("recalcStandings").onclick=renderStandings;
   if(el("standingsView")) el("standingsView").onchange=renderStandings;
@@ -2843,7 +3046,7 @@ el("simSelected").onclick=()=>{
   el("resetStats").onclick=()=>{
     if(!confirm("Reset ALL season stats AND mark scheduled games unplayed?")) return;
     const structure = state.season?.structure ? JSON.parse(JSON.stringify(state.season.structure)) : { leagueName:"League", divisions:[] };
-    state.season={batting:{}, pitching:{}, standings:{}, gameLog:[], structure, playoffs:null};
+    state.season={batting:{}, pitching:{}, standings:{}, gameLog:[], structure, playoffs:null, playoffStats:{batting:{}, pitching:{}}};
     for(const g of state.schedule){ g.status="scheduled"; g.homeScore=0; g.awayScore=0; g.playedAt=null; }
     saveState();
     renderStats();

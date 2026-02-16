@@ -30,6 +30,25 @@ button{cursor:pointer}
 button.primary{border-color:#22c55e}
 button.danger{border-color:#ef4444}
 .pill{border:1px solid #233055;padding:6px 10px;border-radius:999px;color:#cbd5e1;font-size:12px}
+
+/* --- Playoff bracket --- */
+.bracket{display:grid;grid-template-columns:repeat(3, minmax(220px, 1fr));gap:14px;margin-top:10px}
+.bracketRound{display:grid;grid-template-rows:auto repeat(12, 1fr);gap:10px;align-items:stretch}
+.bracketRoundTitle{font-weight:900;letter-spacing:.4px;color:#cfe2ff;margin-bottom:2px}
+.match{border:1px solid #233055;border-radius:14px;background:#0b1229;padding:10px;display:flex;flex-direction:column;gap:8px}
+.matchRow{display:grid;grid-template-columns:34px 1fr 34px;gap:8px;align-items:center;padding:6px 8px;border-radius:10px;background:#0a1024}
+.matchRow.winner{outline:1px solid rgba(90,162,255,0.65)}
+.matchRow .seed{font-weight:900;color:#9fc2ff;text-align:center}
+.matchRow .team{font-weight:850;color:#e8f1ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.matchRow .wins{font-weight:900;color:#cfe2ff;text-align:center}
+.matchMeta{display:flex;justify-content:space-between;align-items:center}
+.matchGames{border-top:1px dashed #233055;padding-top:6px;display:flex;flex-direction:column;gap:2px}
+
+@media (max-width: 980px){
+  .bracket{grid-template-columns:1fr;}
+  .bracketRound{grid-template-rows:auto;}
+  .match{grid-row:auto!important;}
+}
 .bases{display:flex;gap:10px;margin:10px 0}
 .base{width:54px;height:54px;display:flex;align-items:center;justify-content:center;border:1px dashed #334155;border-radius:12px;color:#cbd5e1}
 .base.on{border-style:solid;border-color:#22c55e;background:#0f2b1d;color:#dcfce7}

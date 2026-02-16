@@ -252,6 +252,23 @@
           <span class="small">Top 2 from each division. Best-of-3 each round. Same-division teams cannot meet until Round 2.</span>
         </div>
         <div id="playoffsWrap"></div>
+
+        <div class="card" style="margin-top:12px; background:#0b1229">
+          <h3 class="h3">Playoff Leaders</h3>
+          <div class="row">
+            <label>Type</label>
+            <select id="poLeadType">
+              <option value="bat" selected>Batting</option>
+              <option value="pit">Pitching</option>
+            </select>
+            <label>Category</label>
+            <select id="poLeadCat"></select>
+            <span class="small">Separate from regular season.</span>
+          </div>
+          <div id="playoffLeadersWrap" class="tableWrap">
+            <table id="poLeadTable"></table>
+          </div>
+        </div>
       </div>
     </section>
 

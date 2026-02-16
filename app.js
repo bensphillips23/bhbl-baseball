@@ -1,4 +1,4 @@
-const APP_VERSION = "5.9.6";
+const APP_VERSION = "5.9.0";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -128,16 +128,12 @@ function getPlayer(pid){
   return null;
 }
 
-function getLineup(teamId){
-  const t = getTeam(teamId);
-  if(!t) return [];
-  if(typeof normalizedLineup === "function") return normalizedLineup(t);
-  return (t.lineup||[]).slice(0,9);
+function ensurePitch(pid){
+  if(!pid) return;
+  if(!state.season.pitching[pid]){
+    state.season.pitching[pid] = { OUTS:0, H:0, R:0, HR:0, BB:0, SO:0, W:0, L:0, SV:0 };
+  }
 }
-
-
-
-function ensurePitch(pid, g){ if(!pid) return; pitchStore(g||game, pid); }
 function outsToIP(outs){
   const full = Math.floor(outs/3);
   const rem = outs % 3;
@@ -168,7 +164,9 @@ function currentPitcherId(g){
   return g?.pitcher?.[def] || "";
 }
 
-function ensureBat(pid, g){ batStore(g||game, pid); }
+function ensureBat(pid){
+  if(!state.season.batting[pid]) state.season.batting[pid] = { AB:0,H:0,HR:0,RBI:0,R:0,BB:0,SO:0,"2B":0,"3B":0 };
+}
 
 function ensureGameBat(pid){
   if(!game || !pid) return;
@@ -695,7 +693,28 @@ function endHalf(g){
 }
 
 
-function creditRun(pid){ if(!pid) return; const s = batStore(game, pid); s.R += 1; }
+function creditRun(pid){ if(!pid) return; ensureBat(pid); state.season.batting[pid].R += 1; }
+function rbi(bid){ if(!bid) return; ensureBat(bid); state.season.batting[bid].RBI += 1; }
+function scoreRun(g, bid){
+  // Rule (simplified): if the 3rd out is made on this play, no runs score.
+  if(g && g._outsBeforePlay===2 && g.outs>=3) return;
+  const side = battingSide(g);
+  g.score[side] += 1;
+  recordRunEvent();
+  // pitching: charge run to active pitcher (fielding team)
+  const rpid = currentPitcherId(g);
+  if(rpid){ ensurePitch(rpid); state.season.pitching[rpid].R += 1; }
+  if(bid) rbi(bid);
+}
+
+function walkAdvance(g, bid){
+  const b=g.bases.slice();
+  if(!b[0]){ g.bases[0]=bid; return; }
+  if(!b[1]){ g.bases[1]=b[0]; g.bases[0]=bid; return; }
+  if(!b[2]){ g.bases[2]=b[1]; g.bases[1]=b[0]; g.bases[0]=bid; return; }
+  creditRun(b[2]); scoreRun(g,bid);
+  g.bases[2]=b[1]; g.bases[1]=b[0]; g.bases[0]=bid;
+}
 function advanceAll(g, n, bid, batterBaseIndex){
   const old=g.bases.slice();
   const nb=[null,null,null];
@@ -772,71 +791,6 @@ function renderTeamsAll(){
   fillTeamSelect(el("lineupTeam"));
 }
 
-
-function makePlayerLink(pid, label){
-  const name = label || getPlayer(pid)?.name || "Player";
-  return `<span class="pLink" data-pid="${pid}">${escapeHtml(name)}</span>`;
-}
-
-function renderLiveBox(){
-  const boxEl = el("liveBox");
-  const card = el("liveBoxCard");
-  if(!boxEl || !card) return;
-  if(!game){
-    boxEl.innerHTML = '<div class="hint">No active game.</div>';
-    return;
-  }
-  const home = getTeam(game.homeId);
-  const away = getTeam(game.awayId);
-    const b = null;
-    const p = null;
-  const batCols = ["AB","H","HR","RBI","R","BB","SO"];
-  const pitCols = ["IP","H","R","ER","HR","BB","SO"];
-
-  const batTable = (teamId, title)=>{
-    const lineup = getLineup(teamId) || [];
-    const rows = lineup.map(pid=>{
-      const s = (typeof batStore==="function") ? batStore(game,pid) : ((game.box&&game.box.batting)||{})[pid] || {AB:0,H:0,HR:0,RBI:0,R:0,BB:0,SO:0};
-      return `<tr><td>${makePlayerLink(pid)}</td>${batCols.map(k=>`<td>${s[k]||0}</td>`).join("")}</tr>`;
-    }).join("");
-    return `<div class="hint" style="margin:8px 0 4px">${escapeHtml(title)}</div>
-      <table class="liveTbl">
-        <thead><tr><th>Batting</th>${batCols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>
-        <tbody>${rows || `<tr><td colspan="${1+batCols.length}" class="hint">No lineup</td></tr>`}</tbody>
-      </table>`;
-  };
-
-  const pitTable = (teamId, title)=>{
-    const pitchers = (getTeam(teamId)?.pitchers)||[];
-    const rows = pitchers.map(pp=>{
-      const s = (typeof pitchStore==="function") ? pitchStore(game,pp.id) : ((game.box&&game.box.pitching)||{})[pp.id] || {OUTS:0,H:0,R:0,ER:0,HR:0,BB:0,SO:0};
-      const ip = outsToIP(s.OUTS||0);
-      return `<tr>
-        <td>${makePlayerLink(pp.id, pp.name)}</td>
-        <td>${ip}</td>
-        <td>${s.H||0}</td>
-        <td>${s.R||0}</td>
-        <td>${s.ER||0}</td>
-        <td>${s.HR||0}</td>
-        <td>${s.BB||0}</td>
-        <td>${s.SO||0}</td>
-      </tr>`;
-    }).join("");
-    return `<div class="hint" style="margin:10px 0 4px">${escapeHtml(title)}</div>
-      <table class="liveTbl">
-        <thead><tr><th>Pitching</th>${pitCols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>
-        <tbody>${rows || `<tr><td colspan="${1+pitCols.length}" class="hint">No pitchers</td></tr>`}</tbody>
-      </table>`;
-  };
-
-  boxEl.innerHTML = `
-    ${batTable(game.awayId, away?.name || "Away")}
-    ${pitTable(game.awayId, (away?.name||"Away")+" Pitching")}
-    ${batTable(game.homeId, home?.name || "Home")}
-    ${pitTable(game.homeId, (home?.name||"Home")+" Pitching")}
-  `;
-}
-
 function renderPlayPitcherSelectors(){
   const homeId=el("homeTeam").value;
   const awayId=el("awayTeam").value;
@@ -878,7 +832,6 @@ function renderPlay(){
     else el("startGame").textContent = "Start Game";
   }
   updateScoreboardUI();
-  renderLiveBox();
     return;
   }
   el("inning").textContent=String(game.inning);
@@ -906,7 +859,6 @@ function renderPlay(){
     else el("startGame").textContent = "Start Game";
   }
   updateScoreboardUI();
-  renderLiveBox();
 }
 
 
@@ -1658,90 +1610,6 @@ function initDnD(){
   makeDndList(el("modalBenchHomeList"));
 }
 
-
-function statBox(label, value){
-  return `<div class="statBox"><b>${escapeHtml(label)}</b><span>${escapeHtml(String(value ?? 0))}</span></div>`;
-}
-
-function openPlayerCard(pid){
-  const modal = el("playerCardModal");
-  if(!modal) return;
-  const pl = getPlayer(pid);
-  if(!pl) return;
-
-  el("pcName").textContent = pl.name || "Player";
-  const team = (state.teams||[]).find(t=> (t.roster||[]).some(x=>x.id===pid) || (t.pitchers||[]).some(x=>x.id===pid));
-  el("pcTeam").textContent = team ? team.name : "";
-
-  const sb = (state.season && state.season.batting) ? state.season.batting[pid] : null;
-  const sp = (state.season && state.season.pitching) ? state.season.pitching[pid] : null;
-
-  let seasonHtml = "";
-  if(sb){
-    const avg = sb.AB ? (sb.H/sb.AB) : 0;
-    seasonHtml += `<div class="hint">Batting</div>
-      <div class="statGrid">
-        ${statBox("AB", sb.AB)}${statBox("H", sb.H)}${statBox("HR", sb.HR)}${statBox("RBI", sb.RBI)}
-        ${statBox("R", sb.R)}${statBox("BB", sb.BB)}${statBox("SO", sb.SO)}${statBox("AVG", avg.toFixed(3))}
-      </div>`;
-  }
-  if(sp){
-    const ip = outsToIP(sp.OUTS||0);
-    const era = (sp.OUTS ? ((sp.ER||0)*27/(sp.OUTS||1)) : 0);
-    seasonHtml += `<div class="hint" style="margin-top:10px">Pitching</div>
-      <div class="statGrid">
-        ${statBox("W", sp.W)}${statBox("L", sp.L)}${statBox("SV", sp.SV)}${statBox("SO", sp.SO)}
-        ${statBox("IP", ip)}${statBox("H", sp.H)}${statBox("R", sp.R)}${statBox("ERA", era.toFixed(2))}
-      </div>`;
-  }
-  if(!seasonHtml) seasonHtml = `<div class="hint">No season stats yet.</div>`;
-  el("pcSeason").innerHTML = seasonHtml;
-
-  let gameHtml = "";
-  if(game && game.box){
-    const gb = (game.box.batting||{})[pid];
-    const gp = (game.box.pitching||{})[pid];
-    if(gb){
-      const avg = gb.AB ? (gb.H/gb.AB) : 0;
-      gameHtml += `<div class="hint">Batting</div>
-        <div class="statGrid">
-          ${statBox("AB", gb.AB)}${statBox("H", gb.H)}${statBox("HR", gb.HR)}${statBox("RBI", gb.RBI)}
-          ${statBox("R", gb.R)}${statBox("BB", gb.BB)}${statBox("SO", gb.SO)}${statBox("AVG", avg.toFixed(3))}
-        </div>`;
-    }
-    if(gp){
-      const ip = outsToIP(gp.OUTS||0);
-      const era = (gp.OUTS ? ((gp.ER||0)*27/(gp.OUTS||1)) : 0);
-      gameHtml += `<div class="hint" style="margin-top:10px">Pitching</div>
-        <div class="statGrid">
-          ${statBox("OUTS", gp.OUTS)}${statBox("IP", ip)}${statBox("SO", gp.SO)}${statBox("BB", gp.BB)}
-          ${statBox("H", gp.H)}${statBox("R", gp.R)}${statBox("ER", gp.ER)}${statBox("ERA", era.toFixed(2))}
-        </div>`;
-    }
-  }
-  if(!gameHtml) gameHtml = `<div class="hint">Not in current game.</div>`;
-  el("pcGame").innerHTML = gameHtml;
-
-  el("pcNote").textContent = "Player cards show season totals and current-game box score.";
-  modal.classList.add("show");
-  modal.setAttribute("aria-hidden","false");
-}
-
-function closePlayerCard(){
-  const modal = el("playerCardModal");
-  if(!modal) return;
-  modal.classList.remove("show");
-  modal.setAttribute("aria-hidden","true");
-}
-
-function wirePlayerCard(){
-  if(el("pcClose")) el("pcClose").onclick = closePlayerCard;
-  const modal = el("playerCardModal");
-  if(modal){
-    modal.addEventListener("click", (e)=>{ if(e.target===modal) closePlayerCard(); });
-  }
-}
-
 function init(){
   if(el("appVersion")) el("appVersion").textContent = "v"+APP_VERSION;
   wireTabs();
@@ -2101,22 +1969,5 @@ window.onerror = function(message, source, lineno, colno, error){
   }catch(e){}
   return false;
 };
-
-
-
-document.addEventListener("click", (e)=>{
-  const t = e.target;
-  if(t && t.getAttribute && t.getAttribute("data-pid")){
-    openPlayerCard(t.getAttribute("data-pid"));
-  }
-});
-function escapeHtml(s){
-  return String(s??"")
-    .split("&").join("&amp;")
-    .split("<").join("&lt;")
-    .split(">").join("&gt;")
-    .split('"').join("&quot;")
-    .split("'").join("&#39;");
-}
 
 

@@ -1,4 +1,4 @@
-const APP_VERSION = "5.10.0";
+const APP_VERSION = "5.11.2";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -84,6 +84,42 @@ const uid = ()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36);
 function tierLabel(k) { return (BA_TIERS.find(t=>t.key===k)||{label:k}).label; }
 function hrLabel(k) { return k==="ge20" ? "20+ HR" : "< 20 HR"; }
 
+/*** Team colors & abbreviations ***/
+const TEAM_COLORS = ["#ef4444","#f97316","#f59e0b","#22c55e","#06b6d4","#3b82f6","#6366f1","#a855f7","#ec4899","#84cc16","#14b8a6","#e11d48"];
+function makeAbbr(name){
+  const words = String(name||"").trim().split(/\s+/).filter(Boolean);
+  if(!words.length) return "TM";
+  if(words.length===1) return words[0].slice(0,3).toUpperCase();
+  return words.map(w=>w[0]).join("").slice(0,3).toUpperCase();
+}
+function ensureTeamStyle(t, idx=0){
+  if(!t) return t;
+  if(!t.color) t.color = TEAM_COLORS[idx % TEAM_COLORS.length];
+  if(!t.abbr) t.abbr = makeAbbr(t.name);
+  return t;
+}
+function teamDot(t){
+  const c = t?.color || "#64748b";
+  return `<span class="teamDot" style="background:${c}"></span>`;
+}
+function getTeamByName(name){
+  const k = String(name||"").trim().toLowerCase();
+  return state.teams.find(t=>String(t.name||"").trim().toLowerCase()===k) || null;
+}
+
+/*** Offseason re-rating: season stats become next season's tier (house rule) ***/
+const RERATE_MIN_AB = 1;       // house rule: any AB re-rates; 0 AB keeps last year's ratings
+const RERATE_HR_THRESHOLD = 5; // 18-game season house rule: 5+ HR re-rates to the "20+ HR" chart
+function avgToTier(avg){
+  if(avg>=0.300) return "300_plus";
+  if(avg>=0.280) return "280_299";
+  if(avg>=0.260) return "260_279";
+  if(avg>=0.240) return "240_259";
+  if(avg>=0.220) return "220_239";
+  if(avg>=0.200) return "200_219";
+  return "under_200";
+}
+
 function defaultState(){
   const mkTeam=(name)=>({id:uid(),name,roster:[], lineup:[], pitchers:[], defaultSPId:null});
   const home=mkTeam("Home");
@@ -117,7 +153,9 @@ function loadState(){
     if(!raw) return defaultState();
     const s = JSON.parse(raw);
     if(!s.teams) return defaultState();
+    let _ci = 0;
     for(const t of s.teams){
+      ensureTeamStyle(t, _ci++);
       if(!t.roster) t.roster=[];
       if(!t.lineup) t.lineup = t.roster.slice(0,9).map(p=>p.id);
       if(!t.pitchers) t.pitchers=[];
@@ -536,8 +574,9 @@ function renderSchedule(){
   }
 
   for(const g of filtered){
-    const away = getTeam(g.awayId)?.name ?? "??";
-    const home = getTeam(g.homeId)?.name ?? "??";
+    const awayT = getTeam(g.awayId), homeT = getTeam(g.homeId);
+    const away = awayT ? `${teamDot(ensureTeamStyle(awayT))}${awayT.name}` : "??";
+    const home = homeT ? `${teamDot(ensureTeamStyle(homeT))}${homeT.name}` : "??";
     const row = document.createElement("div");
     row.className = "schedRow" + (g.id===selectedGameId ? " selected" : "");
     const inn = (g.innings && Number(g.innings)>9) ? ` (${g.innings})` : "";
@@ -742,8 +781,11 @@ function updateScoreboardUI(){
   }
   const awayT=getTeam(game.awayId);
   const homeT=getTeam(game.homeId);
-  el("sbAwayName").textContent = awayT?.name || "Away";
-  el("sbHomeName").textContent = homeT?.name || "Home";
+  ensureTeamStyle(awayT); ensureTeamStyle(homeT);
+  el("sbAwayName").innerHTML = awayT ? `${teamDot(awayT)}${awayT.abbr||awayT.name}` : "Away";
+  el("sbHomeName").innerHTML = homeT ? `${teamDot(homeT)}${homeT.abbr||homeT.name}` : "Home";
+  if(awayT) el("sbAwayName").title = awayT.name;
+  if(homeT) el("sbHomeName").title = homeT.name;
   el("sbAwayScore").textContent = String(game.score.away);
   el("sbHomeScore").textContent = String(game.score.home);
 
@@ -1161,10 +1203,25 @@ function renderPitchers(){
 function renderLeague(){
   const div=el("teamsList");
   div.innerHTML="";
+  let _li=0;
   for(const t of state.teams){
+    ensureTeamStyle(t, _li++);
     const row=document.createElement("div");
     row.className="row";
-    row.innerHTML = `<div class="pill"><b>${t.name}</b> — ${t.roster.length} players</div>`;
+    row.innerHTML = `<div class="pill">${teamDot(t)}<b>${t.name}</b> — ${t.roster.length} players</div>`;
+
+    const colorIn=document.createElement("input");
+    colorIn.type="color"; colorIn.value=t.color; colorIn.title="Team color";
+    colorIn.style.width="44px"; colorIn.style.height="34px"; colorIn.style.padding="2px";
+    colorIn.onchange=()=>{ t.color=colorIn.value; saveState(); renderLeague(); renderPlay(); };
+
+    const abbrIn=document.createElement("input");
+    abbrIn.value=t.abbr; abbrIn.maxLength=4; abbrIn.title="Abbreviation (scoreboard)";
+    abbrIn.style.width="64px"; abbrIn.placeholder="ABR";
+    abbrIn.onchange=()=>{ t.abbr=(abbrIn.value||makeAbbr(t.name)).toUpperCase().slice(0,4); saveState(); renderLeague(); renderPlay(); };
+
+    row.appendChild(colorIn);
+    row.appendChild(abbrIn);
     const del=document.createElement("button");
     del.className="danger"; del.textContent="Delete";
     del.onclick=()=>{
@@ -1332,7 +1389,7 @@ function makeStandingsTable(rows){
     if(idx===0 && r.GP>0) tr.className="leader";
     const gb=(idx===0)?"-":((r.GB%1===0)?String(r.GB):r.GB.toFixed(1));
     const vals=[
-      team?.name??"??",
+      team ? `${teamDot(ensureTeamStyle(team))}${team.name}` : "??",
       r.W, r.L,
       r.WPct.toFixed(3).replace(/^0/,""),
       gb,
@@ -1340,7 +1397,7 @@ function makeStandingsTable(rows){
       r.Streak,
       r.RF, r.RA, r.RD
     ];
-    vals.forEach(v=>{ const td=document.createElement("td"); td.textContent=String(v); tr.appendChild(td); });
+    vals.forEach((v,ci)=>{ const td=document.createElement("td"); if(ci===0) td.innerHTML=String(v); else td.textContent=String(v); tr.appendChild(td); });
     tbl.appendChild(tr);
   });
   return tbl;
@@ -2219,8 +2276,9 @@ function renderPlayoffs(){
   const mkMatch = (s)=>{
     const box=document.createElement("div");
     box.className="match";
-    const homeName=getTeam(s.homeId)?.name||"?";
-    const awayName=getTeam(s.awayId)?.name||"?";
+    const homeT=getTeam(s.homeId), awayT=getTeam(s.awayId);
+    const homeName=homeT?`${teamDot(ensureTeamStyle(homeT))}${homeT.name}`:"?";
+    const awayName=awayT?`${teamDot(ensureTeamStyle(awayT))}${awayT.name}`:"?";
     const need=Math.ceil((s.bestOf||3)/2);
     const done=seriesIsComplete(s);
     box.innerHTML = `
@@ -2423,7 +2481,7 @@ function startNewSeason(){
   if(!champ){
     if(!confirm(`No playoff champion has been crowned for Season ${sn}.\n\nArchive it and start Season ${sn+1} anyway?`)) return;
   } else {
-    if(!confirm(`Archive Season ${sn} (Champion: ${champ}) and start Season ${sn+1}?\n\nTeams, rosters, lineups, pitching staffs, and divisions all carry over.\nStats, standings, schedule, and playoffs are saved to History and reset.`)) return;
+    if(!confirm(`Archive Season ${sn} (Champion: ${champ}) and start Season ${sn+1}?\n\nTeams, rosters, lineups, pitching staffs, and divisions all carry over.\nStats, standings, schedule, and playoffs are saved to History and reset.\n\nOffseason re-rating: each batter's actual AVG becomes his new BA tier and ${RERATE_HR_THRESHOLD}+ HR puts him on the 20+ HR chart. Players with 0 AB keep last year's ratings.`)) return;
   }
 
   const divName = (id)=> (state.season.structure?.divisions||[]).find(d=>d.id===id)?.name || "";
@@ -2453,6 +2511,32 @@ function startNewSeason(){
     }))
   };
 
+  // Offseason re-rating (house rule): each batter's actual season AVG sets next
+  // season's BA tier; actual HR total sets the HR group. Requires RERATE_MIN_AB.
+  const reRating = [];
+  for(const t of state.teams){
+    for(const p of (t.roster||[])){
+      const s = state.season.batting[p.id];
+      const ab = Number(s?.AB)||0;
+      if(ab < RERATE_MIN_AB) continue;
+      const avg = (Number(s.H)||0)/ab;
+      const hrN = Number(s.HR)||0;
+      const newTier = avgToTier(avg);
+      const newHr = hrN >= RERATE_HR_THRESHOLD ? "ge20" : "lt20";
+      if(newTier !== p.tier || newHr !== p.hr){
+        reRating.push({
+          team: t.name, name: p.name,
+          avg: avg.toFixed(3).replace(/^0/,""), hr: hrN,
+          fromTier: tierLabel(p.tier), toTier: tierLabel(newTier),
+          fromHr: hrLabel(p.hr), toHr: hrLabel(newHr)
+        });
+        p.tier = newTier;
+        p.hr = newHr;
+      }
+    }
+  }
+  snapshot.reRating = reRating;
+
   state.franchise = state.franchise || { seasonNumber:1, history:[] };
   state.franchise.history.push(snapshot);
   state.franchise.seasonNumber = sn + 1;
@@ -2474,7 +2558,7 @@ function startNewSeason(){
   renderTeamsAll(); renderLeague(); renderSchedule(); renderStats(); renderLeaders();
   renderStandings(); renderAwards(); renderPlayoffs(); renderPitching(); renderPlay();
   renderHistory();
-  alert(`Season ${sn} archived. Welcome to Season ${state.franchise.seasonNumber}!`);
+  alert(`Season ${sn} archived. Welcome to Season ${state.franchise.seasonNumber}!` + (reRating.length ? `\n\nOffseason re-rating: ${reRating.length} player${reRating.length===1?"":"s"} changed tier/HR group (see History tab).` : `\n\nOffseason re-rating: no tier changes.`));
 }
 
 function renderSeasonBadge(){
@@ -2543,6 +2627,20 @@ function renderHistory(){
     batEl.innerHTML = _histTable(["Team","Player","AB","H","2B","3B","HR","RBI","R","BB","SO","SF","AVG"], rows);
   }
 
+  const rrEl = el("histReRating");
+  if(rrEl){
+    if(h.reRating && h.reRating.length){
+      rrEl.innerHTML = _histTable(
+        ["Team","Player","AVG","HR","Tier (old → new)","HR Group (old → new)"],
+        h.reRating.map(r=>[r.team, r.name, r.avg, r.hr,
+          (r.fromTier!==r.toTier) ? `${r.fromTier} → ${r.toTier}` : r.toTier,
+          (r.fromHr!==r.toHr) ? `${r.fromHr} → ${r.toHr}` : r.toHr])
+      );
+    } else {
+      rrEl.innerHTML = `<div class="small">${h.imported ? "Imported season — no re-rating data." : "No tier changes this offseason."}</div>`;
+    }
+  }
+
   if(pitEl){
     const rows = [];
     for(const t of h.teams){
@@ -2555,6 +2653,350 @@ function renderHistory(){
       }
     }
     pitEl.innerHTML = _histTable(["Team","Pitcher","GP","IP","H","R","ER","HR","BB","SO","W","L","SV","ERA"], rows);
+  }
+}
+
+
+
+/*** Historical season import (CSV) — for pre-app seasons played by hand ***/
+function parseCsv(text){
+  const rows=[]; let row=[], field="", inQ=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(inQ){
+      if(c==='"'){ if(text[i+1]==='"'){ field+='"'; i++; } else inQ=false; }
+      else field+=c;
+    } else {
+      if(c==='"') inQ=true;
+      else if(c===","){ row.push(field); field=""; }
+      else if(c==="\n" || c==="\r"){
+        if(c==="\r" && text[i+1]==="\n") i++;
+        row.push(field); field="";
+        if(row.some(x=>x.trim()!=="")) rows.push(row);
+        row=[];
+      }
+      else field+=c;
+    }
+  }
+  row.push(field);
+  if(row.some(x=>x.trim()!=="")) rows.push(row);
+  return rows;
+}
+
+function ipToOuts(ip){
+  const s = String(ip||"").trim();
+  if(!s) return 0;
+  const parts = s.split(".");
+  const whole = Number(parts[0])||0;
+  const frac = Number(parts[1]?.[0])||0; // .1 = 1 out, .2 = 2 outs
+  return whole*3 + Math.min(frac,2);
+}
+
+const HIST_TEMPLATE_HEADER = ["Section","Season","Team","Player","Pos","AB","H","2B","3B","HR","RBI","R","BB","SO","SF","GP","IP","P_H","P_R","P_ER","P_HR","P_BB","P_SO","W","L","SV","MVP"];
+
+function downloadHistTemplate(){
+  const rows = [
+    HIST_TEMPLATE_HEADER,
+    ["Batting","1","Tigers","John Smith","SS","210","63","12","2","18","55","48","20","30","3","","","","","","","","","","","","4"],
+    ["Pitching","1","Tigers","Bob Jones","","","","","","","","","","","","14","88.2","75","40","38","9","25","70","8","4","0",""],
+    ["Record","1","Tigers","","","","","","","","","","","","","","","","","","","","","30","18","",""],
+    ["Champion","1","Tigers","","","","","","","","","","","","","","","","","","","","","","","",""],
+  ];
+  downloadText("BHBL_History_Import_Template.csv", toCsv(rows));
+  alert("Template downloaded.\n\nRow types:\n• Batting — one row per player per season (AB through SF)\n• Pitching — one row per pitcher per season (GP, IP like 88.2, then pitching H/R/ER/HR/BB/SO, W, L, SV)\n• Record — one row per team per season: W and L go in the W/L columns\n• Champion — one row per season: Team = champion\n\nLeave unused columns empty. SF and MVP can be blank if you didn't track them. IP uses baseball notation (88.2 = 88⅔). Use the same player spelling across seasons so career totals connect.");
+}
+
+function importHistoricalCsv(){
+  const f = el("histImportFile")?.files?.[0];
+  if(!f) return alert("Choose a CSV file first (download the template for the format).");
+  f.text().then(txt=>{
+    try{
+      const rows = parseCsv(txt);
+      if(rows.length < 2) throw new Error("CSV has no data rows.");
+      const head = rows[0].map(h=>String(h).trim().toLowerCase());
+      const col = {};
+      HIST_TEMPLATE_HEADER.forEach(h=>{ col[h] = head.indexOf(h.toLowerCase()); });
+      if(col.Section<0 || col.Season<0 || col.Team<0) throw new Error("Missing required columns: Section, Season, Team. Download the template for the exact header.");
+
+      const get = (r,name)=> (col[name]>=0 ? String(r[col[name]]??"").trim() : "");
+      const getN = (r,name)=> Number(get(r,name))||0;
+
+      const seasons = new Map(); // seasonNumber -> {champion, records:[], teams:Map name->{batters,pitchers}}
+      const getSeason = (sn)=>{
+        if(!seasons.has(sn)) seasons.set(sn, { champion:null, records:[], teams:new Map() });
+        return seasons.get(sn);
+      };
+      const getSeasonTeam = (S, name)=>{
+        if(!S.teams.has(name)) S.teams.set(name, { name, batters:[], pitchers:[] });
+        return S.teams.get(name);
+      };
+
+      let nBat=0, nPit=0, nRec=0, nChamp=0, skippedRows=0;
+      for(let i=1;i<rows.length;i++){
+        const r = rows[i];
+        const sec = get(r,"Section").toLowerCase();
+        const sn = Number(get(r,"Season"));
+        const teamName = get(r,"Team");
+        if(!sec || !Number.isFinite(sn) || sn<=0 || !teamName){ skippedRows++; continue; }
+        const S = getSeason(sn);
+
+        if(sec==="batting"){
+          const player = get(r,"Player");
+          if(!player){ skippedRows++; continue; }
+          const line = _initBatLine();
+          line.AB=getN(r,"AB"); line.H=getN(r,"H"); line["2B"]=getN(r,"2B"); line["3B"]=getN(r,"3B");
+          line.HR=getN(r,"HR"); line.RBI=getN(r,"RBI"); line.R=getN(r,"R"); line.BB=getN(r,"BB");
+          line.SO=getN(r,"SO"); line.SF=getN(r,"SF");
+          const mvp = getN(r,"MVP"); if(mvp) line.MVP = mvp;
+          getSeasonTeam(S, teamName).batters.push({ name:player, pos:get(r,"Pos"), line });
+          nBat++;
+        } else if(sec==="pitching"){
+          const player = get(r,"Player");
+          if(!player){ skippedRows++; continue; }
+          const line = _initPitchLine();
+          line.GP=getN(r,"GP"); line.OUTS=ipToOuts(get(r,"IP"));
+          line.H=getN(r,"P_H"); line.R=getN(r,"P_R"); line.ER=getN(r,"P_ER");
+          line.HR=getN(r,"P_HR"); line.BB=getN(r,"P_BB"); line.SO=getN(r,"P_SO");
+          line.W=getN(r,"W"); line.L=getN(r,"L"); line.SV=getN(r,"SV");
+          getSeasonTeam(S, teamName).pitchers.push({ name:player, role:"", line });
+          nPit++;
+        } else if(sec==="record"){
+          S.records.push({ name:teamName, W:getN(r,"W"), L:getN(r,"L") });
+          nRec++;
+        } else if(sec==="champion"){
+          S.champion = teamName;
+          nChamp++;
+        } else {
+          skippedRows++;
+        }
+      }
+      if(!seasons.size) throw new Error("No valid rows found.");
+
+      state.franchise = state.franchise || { seasonNumber:1, history:[] };
+      const existing = new Set(state.franchise.history.map(h=>Number(h.seasonNumber)));
+      const skippedSeasons = [];
+      let added = 0, maxSn = 0;
+
+      const sortedSns = [...seasons.keys()].sort((a,b)=>a-b);
+      for(const sn of sortedSns){
+        maxSn = Math.max(maxSn, sn);
+        if(existing.has(sn)){ skippedSeasons.push(sn); continue; }
+        const S = seasons.get(sn);
+        const standings = S.records
+          .slice()
+          .sort((a,b)=>(b.W-b.L)-(a.W-a.L))
+          .map(rec=>({
+            name: rec.name, division: "",
+            GP: rec.W+rec.L, W: rec.W, L: rec.L,
+            Pct: (rec.W+rec.L) ? (rec.W/(rec.W+rec.L)).toFixed(3).replace(/^0/,"") : "-",
+            RF: "-", RA: "-", RD: "-"
+          }));
+        state.franchise.history.push({
+          id: uid(),
+          seasonNumber: sn,
+          completedAt: new Date().toISOString(),
+          imported: true,
+          champion: S.champion,
+          gamesPlayed: standings.reduce((a,r)=>a+r.W,0),
+          standings,
+          teams: [...S.teams.values()]
+        });
+        added++;
+      }
+
+      state.franchise.history.sort((a,b)=>(a.seasonNumber||0)-(b.seasonNumber||0));
+      if(maxSn+1 > state.franchise.seasonNumber) state.franchise.seasonNumber = maxSn+1;
+
+      saveState();
+      renderSeasonBadge();
+      renderHistory();
+      renderRecords();
+      let msg = `Imported ${added} season${added===1?"":"s"} (${nBat} batting, ${nPit} pitching, ${nRec} record, ${nChamp} champion rows).`;
+      if(skippedSeasons.length) msg += `\nSkipped season number${skippedSeasons.length===1?"":"s"} already in history: ${skippedSeasons.join(", ")}.`;
+      if(skippedRows) msg += `\nIgnored ${skippedRows} incomplete row${skippedRows===1?"":"s"}.`;
+      msg += `\nCurrent season is now Season ${state.franchise.seasonNumber}.`;
+      alert(msg);
+    } catch(e){
+      alert("Import failed: " + e.message);
+    }
+  });
+}
+
+/*** Records: career stats, single-season records, champions ***/
+function normName(n){ return String(n||"").trim().toLowerCase(); }
+
+// Every player-season line across archived history + the current live season
+function collectAllSeasonRows(){
+  const batRows=[], pitRows=[];
+  for(const h of (state.franchise?.history||[])){
+    for(const t of (h.teams||[])){
+      for(const b of (t.batters||[])){
+        const l=b.line||{};
+        if(!(Number(l.AB)||Number(l.BB)||Number(l.R))) continue;
+        batRows.push({season:h.seasonNumber, team:t.name, name:b.name, pos:b.pos||"", line:l});
+      }
+      for(const p of (t.pitchers||[])){
+        const l=p.line||{};
+        if(!(Number(l.OUTS)||Number(l.GP))) continue;
+        pitRows.push({season:h.seasonNumber, team:t.name, name:p.name, line:l});
+      }
+    }
+  }
+  const sn = state.franchise?.seasonNumber || 1;
+  for(const t of state.teams){
+    for(const p of (t.roster||[])){
+      const s = state.season.batting[p.id];
+      if(s && (Number(s.AB)||Number(s.BB)||Number(s.R)))
+        batRows.push({season:sn, team:t.name, name:p.name, pos:p.pos||"", line:s, current:true});
+    }
+    for(const p of (t.pitchers||[])){
+      const s = state.season.pitching[p.id];
+      if(s && (Number(s.OUTS)||Number(s.GP)))
+        pitRows.push({season:sn, team:t.name, name:p.name, line:s, current:true});
+    }
+  }
+  return { batRows, pitRows };
+}
+
+const BAT_SUM_KEYS = ["AB","H","2B","3B","HR","RBI","R","BB","SO","SF","MVP"];
+const PITCH_SUM_KEYS = ["GP","OUTS","H","R","HR","BB","SO","W","L","SV"];
+
+function careerTotals(){
+  const { batRows, pitRows } = collectAllSeasonRows();
+  const bat = new Map(), pit = new Map();
+  for(const r of batRows){
+    const k = normName(r.name);
+    if(!bat.has(k)) bat.set(k, { name:r.name, teams:new Set(), seasons:new Set(), line:Object.fromEntries(BAT_SUM_KEYS.map(x=>[x,0])) });
+    const c = bat.get(k);
+    c.teams.add(r.team); c.seasons.add(r.season);
+    for(const key of BAT_SUM_KEYS) c.line[key] += Number(r.line[key])||0;
+  }
+  for(const r of pitRows){
+    const k = normName(r.name);
+    if(!pit.has(k)) pit.set(k, { name:r.name, teams:new Set(), seasons:new Set(), line:Object.fromEntries(PITCH_SUM_KEYS.map(x=>[x,0])), ER:0 });
+    const c = pit.get(k);
+    c.teams.add(r.team); c.seasons.add(r.season);
+    for(const key of PITCH_SUM_KEYS) c.line[key] += Number(r.line[key])||0;
+    c.ER += getER(r.line);
+  }
+  return { bat:[...bat.values()], pit:[...pit.values()] };
+}
+
+const REC_MIN_AB = 20;     // single-season AVG qualifier
+const REC_MIN_OUTS = 30;   // single-season ERA qualifier (10 IP)
+
+function topSeasonList(rows, valueFn, opts={}){
+  const { asc=false, min=null, fmt=(v)=>String(v) } = opts;
+  const scored = rows
+    .filter(r=>!min || min(r))
+    .map(r=>({ r, v:valueFn(r) }))
+    .filter(x=>Number.isFinite(x.v));
+  scored.sort((a,b)=> asc ? (a.v-b.v) : (b.v-a.v));
+  return scored.slice(0,10).map(x=>({
+    name:x.r.name, team:x.r.team, season:x.r.season, current:!!x.r.current, val:fmt(x.v)
+  }));
+}
+
+function _recListHtml(title, entries){
+  const body = entries.length
+    ? entries.map((e,i)=>`<tr><td>${i+1}</td><td>${e.name}</td><td class="small">${e.team}, S${e.season}${e.current?"*":""}</td><td><b>${e.val}</b></td></tr>`).join("")
+    : `<tr><td colspan="4" class="small">No data</td></tr>`;
+  return `<div class="card" style="background:#0b1229"><h3 style="margin-top:0">${title}</h3><table><tbody>${body}</tbody></table></div>`;
+}
+
+function renderChampionsBanner(){
+  const elx = el("championsBanner");
+  if(!elx) return;
+  const hist = (state.franchise?.history||[]).slice().sort((a,b)=>(a.seasonNumber||0)-(b.seasonNumber||0));
+  if(!hist.length){
+    elx.innerHTML = `<div class="small">No completed seasons yet.</div>`;
+    return;
+  }
+  elx.innerHTML = hist.map(h=>{
+    const t = h.champion ? getTeamByName(h.champion) : null;
+    const dot = t ? teamDot(t) : "";
+    const rec = (h.standings||[]).find(r=>r.name===h.champion);
+    const recStr = rec ? ` <span class="small">(${rec.W}-${rec.L})</span>` : "";
+    return `<div class="champCard">
+      <div class="champSeason">Season ${h.seasonNumber}</div>
+      <div class="champName">${h.champion ? `🏆 ${dot}${h.champion}${recStr}` : `<span class="small">No champion recorded</span>`}</div>
+    </div>`;
+  }).join("");
+}
+
+function renderRecords(){
+  renderChampionsBanner();
+
+  const { batRows, pitRows } = collectAllSeasonRows();
+  const { bat, pit } = careerTotals();
+
+  // ----- Career batting -----
+  const cbSort = el("careerBatSort")?.value || "H";
+  const cbEl = el("careerBatting");
+  if(cbEl){
+    const rows = bat.map(c=>{
+      const l=c.line, ab=l.AB, h=l.H;
+      const avg = ab ? (h/ab) : 0;
+      return { c, avg, sortVal: (cbSort==="AVG") ? (ab>=REC_MIN_AB*2 ? avg : -1) : (Number(l[cbSort])||0) };
+    });
+    rows.sort((a,b)=>b.sortVal-a.sortVal);
+    cbEl.innerHTML = _histTable(
+      ["Player","Seasons","Teams","AB","H","2B","3B","HR","RBI","R","BB","SO","SF","MVP","AVG"],
+      rows.map(({c,avg})=>[
+        c.name, c.seasons.size, [...c.teams].join(", "),
+        c.line.AB, c.line.H, c.line["2B"], c.line["3B"], c.line.HR, c.line.RBI,
+        c.line.R, c.line.BB, c.line.SO, c.line.SF, c.line.MVP,
+        avg.toFixed(3).replace(/^0/,"")
+      ])
+    );
+  }
+
+  // ----- Career pitching -----
+  const cpSort = el("careerPitchSort")?.value || "W";
+  const cpEl = el("careerPitching");
+  if(cpEl){
+    const rows = pit.map(c=>{
+      const outs=c.line.OUTS;
+      const era = outs ? (c.ER*9)/(outs/3) : 0;
+      let sortVal;
+      if(cpSort==="ERA") sortVal = (outs>=REC_MIN_OUTS*2) ? -era : -Infinity; // asc via negation
+      else if(cpSort==="IP") sortVal = outs;
+      else sortVal = Number(c.line[cpSort])||0;
+      return { c, era, sortVal };
+    });
+    rows.sort((a,b)=>b.sortVal-a.sortVal);
+    cpEl.innerHTML = _histTable(
+      ["Pitcher","Seasons","Teams","GP","IP","H","R","ER","HR","BB","SO","W","L","SV","ERA"],
+      rows.map(({c,era})=>[
+        c.name, c.seasons.size, [...c.teams].join(", "),
+        c.line.GP, outsToIP(c.line.OUTS), c.line.H, c.line.R, c.ER, c.line.HR,
+        c.line.BB, c.line.SO, c.line.W, c.line.L, c.line.SV, era.toFixed(2)
+      ])
+    );
+  }
+
+  // ----- Single-season records -----
+  const recEl = el("recordsGrid");
+  if(recEl){
+    const n = (k)=> (r)=> Number(r.line[k])||0;
+    const lists = [
+      _recListHtml("HR — Single Season", topSeasonList(batRows, n("HR"))),
+      _recListHtml("RBI — Single Season", topSeasonList(batRows, n("RBI"))),
+      _recListHtml("Hits — Single Season", topSeasonList(batRows, n("H"))),
+      _recListHtml("Runs — Single Season", topSeasonList(batRows, n("R"))),
+      _recListHtml(`AVG — Single Season (min ${REC_MIN_AB} AB)`,
+        topSeasonList(batRows, r=>{const ab=Number(r.line.AB)||0; return ab?(Number(r.line.H)||0)/ab:NaN;},
+          { min:r=>(Number(r.line.AB)||0)>=REC_MIN_AB, fmt:v=>v.toFixed(3).replace(/^0/,"") })),
+      _recListHtml("Wins — Single Season", topSeasonList(pitRows, n("W"))),
+      _recListHtml("Strikeouts (P) — Single Season", topSeasonList(pitRows, n("SO"))),
+      _recListHtml("Saves — Single Season", topSeasonList(pitRows, n("SV"))),
+      _recListHtml(`ERA — Single Season (min ${outsToIP(REC_MIN_OUTS)} IP)`,
+        topSeasonList(pitRows, r=>{const o=Number(r.line.OUTS)||0; return o?(getER(r.line)*9)/(o/3):NaN;},
+          { asc:true, min:r=>(Number(r.line.OUTS)||0)>=REC_MIN_OUTS, fmt:v=>v.toFixed(2) })),
+      _recListHtml("IP — Single Season", topSeasonList(pitRows, r=>Number(r.line.OUTS)||0, { fmt:v=>outsToIP(v) })),
+      _recListHtml("MVP Points — Single Season", topSeasonList(batRows.filter(r=>(Number(r.line.MVP)||0)>0), r=>Number(r.line.MVP)||0)),
+    ];
+    recEl.innerHTML = lists.join("");
   }
 }
 
@@ -2609,6 +3051,7 @@ function showTab(tab){
   if(tab==="stats") { renderStats(); renderLeaders(); }
   if(tab==="pitching") renderPitching();
   if(tab==="history") renderHistory();
+  if(tab==="records") renderRecords();
 }
 function wireTabs(){ document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click", ()=>showTab(btn.dataset.tab))); }
 
@@ -3093,6 +3536,10 @@ function init(){
   renderSeasonBadge();
   if(el("startNewSeason")) el("startNewSeason").onclick = startNewSeason;
   if(el("histSeason")) el("histSeason").onchange = renderHistory;
+  if(el("careerBatSort")) el("careerBatSort").onchange = renderRecords;
+  if(el("careerPitchSort")) el("careerPitchSort").onchange = renderRecords;
+  if(el("downloadHistTemplate")) el("downloadHistTemplate").onclick = downloadHistTemplate;
+  if(el("importHistBtn")) el("importHistBtn").onclick = importHistoricalCsv;
   wireTabs();
   renderTeamsAll();
   fillTierSelect(el("playerTier"));

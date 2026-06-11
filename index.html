@@ -23,6 +23,7 @@
       <button class="tab" data-tab="playoffs">Playoffs</button>
       <button class="tab" data-tab="stats">Stats</button>
       <button class="tab" data-tab="pitching">Pitching</button>
+      <button class="tab" data-tab="records">Records</button>
       <button class="tab" data-tab="history">History</button>
       <button class="tab" data-tab="backup">Backup</button>
     </nav>
@@ -404,6 +405,51 @@
     </section>
 
 
+    <section class="panel" id="records">
+      <div class="card">
+        <h2>Champions</h2>
+        <div class="champBanner" id="championsBanner"></div>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <h2>Career Batting</h2>
+        <div class="row">
+          <label>Sort by</label>
+          <select id="careerBatSort">
+            <option value="H">Hits</option>
+            <option value="HR">HR</option>
+            <option value="RBI">RBI</option>
+            <option value="R">Runs</option>
+            <option value="AB">AB</option>
+            <option value="BB">BB</option>
+            <option value="SF">SF</option>
+            <option value="MVP">MVP Points</option>
+            <option value="AVG">AVG</option>
+          </select>
+        </div>
+        <div class="tableWrap" style="max-height:420px" id="careerBatting"></div>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <h2>Career Pitching</h2>
+        <div class="row">
+          <label>Sort by</label>
+          <select id="careerPitchSort">
+            <option value="W">Wins</option>
+            <option value="SO">Strikeouts</option>
+            <option value="SV">Saves</option>
+            <option value="IP">Innings</option>
+            <option value="GP">Games</option>
+            <option value="ERA">ERA</option>
+          </select>
+        </div>
+        <div class="tableWrap" style="max-height:420px" id="careerPitching"></div>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <h2>Single-Season Records</h2>
+        <div class="hint">Top 10 all-time, across archived and imported seasons plus the current one (* = in progress).</div>
+        <div class="recGrid" id="recordsGrid"></div>
+      </div>
+    </section>
+
     <section class="panel" id="history">
       <div class="card">
         <h2>Franchise History</h2>
@@ -415,12 +461,26 @@
           then resets stats, schedule, and playoffs for a fresh season. Teams, rosters, lineups, pitching staffs, and divisions all carry over.
         </div>
         <hr class="sep"/>
+        <h3>Import Past Seasons (CSV)</h3>
+        <div class="row">
+          <button id="downloadHistTemplate">Download Template</button>
+          <input id="histImportFile" type="file" accept=".csv"/>
+          <button id="importHistBtn" class="primary">Import Historical Seasons</button>
+        </div>
+        <div class="hint">
+          Got seasons you played by hand before using the app? Fill in the template (one Batting row per player-season,
+          one Pitching row per pitcher-season, optional Record and Champion rows per season) and import them here.
+          They'll appear in History and count toward the Records book. Keep player spelling consistent so career totals connect.
+        </div>
+        <hr class="sep"/>
         <div class="row">
           <label>Season</label><select id="histSeason"></select>
         </div>
         <div id="histInfo"></div>
         <h3>Final Standings</h3>
         <div class="tableWrap" id="histStandings"></div>
+        <h3>Offseason Re-Rating</h3>
+        <div class="tableWrap" id="histReRating"></div>
         <h3>Batting</h3>
         <div class="tableWrap" id="histBatting"></div>
         <h3>Pitching</h3>

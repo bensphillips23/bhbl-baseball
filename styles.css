@@ -190,3 +190,13 @@ tr.leader td{font-weight:700;color:#dcfce7}
   border-radius:999px;
   margin-left:8px;
 }
+
+/* v5.11 team colors + records */
+.teamDot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:7px;vertical-align:baseline;border:1px solid rgba(255,255,255,0.25)}
+.champBanner{display:flex;flex-wrap:wrap;gap:10px}
+.champCard{border:1px solid #233055;border-radius:14px;background:#0b1229;padding:10px 14px;min-width:180px}
+.champSeason{font-size:11px;letter-spacing:.6px;color:#94a3b8;font-weight:800;text-transform:uppercase}
+.champName{font-weight:850;margin-top:4px}
+.recGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-top:10px}
+.recGrid table{font-size:12px}
+.recGrid td{padding:5px 7px}

@@ -11,7 +11,7 @@
 <body>
   <header>
     <div>
-      <h1>BHBL Dice Baseball <span class="ver" id="appVersion"></span></h1>
+      <h1>BHBL Dice Baseball <span class="ver" id="appVersion"></span> <span class="ver" id="seasonBadge"></span></h1>
       <div class="sub">v2 — Lineups + Schedule + Live Box + Standings/Leaders. Installable (PWA). Saves locally on your PC.</div>
     </div>
     <nav class="tabs">
@@ -23,6 +23,7 @@
       <button class="tab" data-tab="playoffs">Playoffs</button>
       <button class="tab" data-tab="stats">Stats</button>
       <button class="tab" data-tab="pitching">Pitching</button>
+      <button class="tab" data-tab="history">History</button>
       <button class="tab" data-tab="backup">Backup</button>
     </nav>
   </header>
@@ -351,6 +352,7 @@
                 <option value="R">Runs</option>
                 <option value="BB">BB</option>
                 <option value="SO">SO</option>
+                <option value="SF">Sac Flies</option>
                 <option value="AVG">Avg</option>
                 <option value="OBP">OBP</option>
                 <option value="SLG">SLG</option>
@@ -401,6 +403,30 @@
       </div>
     </section>
 
+
+    <section class="panel" id="history">
+      <div class="card">
+        <h2>Franchise History</h2>
+        <div class="row">
+          <button id="startNewSeason" class="primary">Start New Season (archive current)</button>
+        </div>
+        <div class="hint">
+          Archives the current season — final standings, every player's batting and pitching line, and the playoff champion —
+          then resets stats, schedule, and playoffs for a fresh season. Teams, rosters, lineups, pitching staffs, and divisions all carry over.
+        </div>
+        <hr class="sep"/>
+        <div class="row">
+          <label>Season</label><select id="histSeason"></select>
+        </div>
+        <div id="histInfo"></div>
+        <h3>Final Standings</h3>
+        <div class="tableWrap" id="histStandings"></div>
+        <h3>Batting</h3>
+        <div class="tableWrap" id="histBatting"></div>
+        <h3>Pitching</h3>
+        <div class="tableWrap" id="histPitching"></div>
+      </div>
+    </section>
 
     <section class="panel" id="backup">
       <div class="card">

@@ -1,4 +1,4 @@
-const APP_VERSION = "5.11.2";
+const APP_VERSION = "5.11.3";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -2561,6 +2561,21 @@ function startNewSeason(){
   alert(`Season ${sn} archived. Welcome to Season ${state.franchise.seasonNumber}!` + (reRating.length ? `\n\nOffseason re-rating: ${reRating.length} player${reRating.length===1?"":"s"} changed tier/HR group (see History tab).` : `\n\nOffseason re-rating: no tier changes.`));
 }
 
+function deleteHistorySeason(){
+  const sel = el("histSeason");
+  if(!sel || sel.value==="") return;
+  const idx = Number(sel.value);
+  const h = (state.franchise?.history||[])[idx];
+  if(!h) return;
+  const what = `Season ${h.seasonNumber}${h.champion ? ` (Champion: ${h.champion})` : ""}${h.imported ? " — imported" : ""}`;
+  if(!confirm(`Delete ${what} from franchise history?\n\nThis removes its standings, stats, and records-book contribution. This cannot be undone (export a JSON backup first if unsure).`)) return;
+  state.franchise.history.splice(idx, 1);
+  saveState();
+  renderHistory();
+  renderRecords();
+  renderSeasonBadge();
+}
+
 function renderSeasonBadge(){
   const b = el("seasonBadge");
   if(b) b.textContent = `Season ${state.franchise?.seasonNumber || 1}`;
@@ -2604,6 +2619,25 @@ function renderHistory(){
   const h = hist[Number(sel.value)];
   if(!h) return;
 
+  // team filter for this season's tables
+  const tSel = el("histTeam");
+  let teamFilter = "all";
+  if(tSel){
+    const prevTeam = tSel.value || "all";
+    tSel.innerHTML = "";
+    const allOpt = document.createElement("option");
+    allOpt.value="all"; allOpt.textContent="All Teams";
+    tSel.appendChild(allOpt);
+    for(const t of (h.teams||[])){
+      const o=document.createElement("option");
+      o.value=t.name; o.textContent=t.name;
+      tSel.appendChild(o);
+    }
+    if(prevTeam!=="all" && (h.teams||[]).some(t=>t.name===prevTeam)) tSel.value = prevTeam;
+    teamFilter = tSel.value || "all";
+  }
+  const teamPass = (name)=> teamFilter==="all" || name===teamFilter;
+
   const when = h.completedAt ? new Date(h.completedAt).toLocaleDateString() : "";
   if(info) info.innerHTML = `<div class="row"><span class="pill">Season ${h.seasonNumber}</span><span class="pill">${h.gamesPlayed} games</span><span class="pill">${h.champion ? "🏆 " + h.champion : "No champion recorded"}</span><span class="pill">Archived ${when}</span></div>`;
 
@@ -2617,6 +2651,7 @@ function renderHistory(){
   if(batEl){
     const rows = [];
     for(const t of h.teams){
+      if(!teamPass(t.name)) continue;
       for(const p of t.batters){
         const s = p.line || {};
         const ab = Number(s.AB)||0, hh = Number(s.H)||0;
@@ -2629,21 +2664,23 @@ function renderHistory(){
 
   const rrEl = el("histReRating");
   if(rrEl){
-    if(h.reRating && h.reRating.length){
+    const rr = (h.reRating||[]).filter(r=>teamPass(r.team));
+    if(rr.length){
       rrEl.innerHTML = _histTable(
         ["Team","Player","AVG","HR","Tier (old → new)","HR Group (old → new)"],
-        h.reRating.map(r=>[r.team, r.name, r.avg, r.hr,
+        rr.map(r=>[r.team, r.name, r.avg, r.hr,
           (r.fromTier!==r.toTier) ? `${r.fromTier} → ${r.toTier}` : r.toTier,
           (r.fromHr!==r.toHr) ? `${r.fromHr} → ${r.toHr}` : r.toHr])
       );
     } else {
-      rrEl.innerHTML = `<div class="small">${h.imported ? "Imported season — no re-rating data." : "No tier changes this offseason."}</div>`;
+      rrEl.innerHTML = `<div class="small">${h.imported ? "Imported season — no re-rating data." : (h.reRating&&h.reRating.length ? "No tier changes for this team." : "No tier changes this offseason.")}</div>`;
     }
   }
 
   if(pitEl){
     const rows = [];
     for(const t of h.teams){
+      if(!teamPass(t.name)) continue;
       for(const p of t.pitchers){
         const s = p.line || {};
         const outs = Number(s.OUTS)||0;
@@ -3536,6 +3573,8 @@ function init(){
   renderSeasonBadge();
   if(el("startNewSeason")) el("startNewSeason").onclick = startNewSeason;
   if(el("histSeason")) el("histSeason").onchange = renderHistory;
+  if(el("histTeam")) el("histTeam").onchange = renderHistory;
+  if(el("deleteHistSeason")) el("deleteHistSeason").onclick = deleteHistorySeason;
   if(el("careerBatSort")) el("careerBatSort").onchange = renderRecords;
   if(el("careerPitchSort")) el("careerPitchSort").onchange = renderRecords;
   if(el("downloadHistTemplate")) el("downloadHistTemplate").onclick = downloadHistTemplate;

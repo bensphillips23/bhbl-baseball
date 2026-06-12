@@ -1,4 +1,4 @@
-const APP_VERSION = "5.12.0";
+const APP_VERSION = "5.12.1";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -1105,11 +1105,11 @@ function _boxRowForBat(pid, line){
   const ab = Number(line.AB)||0;
   const h  = Number(line.H)||0;
   const avg = ab ? (h/ab) : 0;
-  return [p.name, ab, h, Number(line["2B"])||0, Number(line["3B"])||0, Number(line.HR)||0, Number(line.RBI)||0, Number(line.R)||0, Number(line.BB)||0, Number(line.SO)||0, Number(line.SF)||0, avg.toFixed(3).replace(/^0/,"")];
+  return [p.name, ab, h, Number(line.HR)||0, Number(line.RBI)||0, Number(line.R)||0, avg.toFixed(3).replace(/^0/,"")];
 }
 function _boxRowForPitch(pid, line){
   const p = getPitcher(game?.awayId, pid) || getPitcher(game?.homeId, pid) || {name:"(unknown)"};
-  return [p.name, outsToIP(Number(line.OUTS)||0), Number(line.H)||0, Number(line.R)||0, Number(line.ER)||0, Number(line.HR)||0, Number(line.BB)||0, Number(line.SO)||0];
+  return [p.name, outsToIP(Number(line.OUTS)||0), Number(line.R)||0, Number(line.ER)||0, Number(line.SO)||0];
 }
 
 function renderLiveBoxScore(){
@@ -1130,8 +1130,8 @@ function renderLiveBoxScore(){
     return `<div><h3>${title}</h3><div class="miniTable"><table><thead>${thead}</thead><tbody>${tbody}</tbody></table></div></div>`;
   };
 
-  const batHead = ["Player","AB","H","2B","3B","HR","RBI","R","BB","SO","SF","AVG"];
-  const pitHead = ["Pitcher","IP","H","R","ER","HR","BB","SO"];
+  const batHead = ["Player","AB","H","HR","RBI","R","AVG"];
+  const pitHead = ["Pitcher","IP","R","ER","SO"];
 
   const awayBatRows = (away?.lineup||[])
     .map(pid=>_boxRowForBat(pid, game.box.batting?.[pid]||{}))
@@ -1498,7 +1498,7 @@ function renderPitching(){
   tbl.innerHTML="";
   if(!team) return;
 
-  const head=["Pitcher","Role","GP","IP","H","R","ER","HR","BB","SO","W","L","SV","ERA"];
+  const head=["Pitcher","Role","GP","IP","R","ER","SO","W","L","SV","ERA"];
   const trh=document.createElement("tr");
   head.forEach(h=>{ const th=document.createElement("th"); th.textContent=h; trh.appendChild(th); });
   tbl.appendChild(trh);
@@ -1511,7 +1511,7 @@ function renderPitching(){
     const ipInnings = ipOuts/3;
     const era = ipInnings>0 ? (9*getER(s)/ipInnings) : 0;
     const tr=document.createElement("tr");
-    const vals=[p.name,p.role,(s.GP||0),ip,s.H,s.R,(s.ER||0),s.HR,s.BB,s.SO,s.W,s.L,s.SV,era.toFixed(2)];
+    const vals=[p.name,p.role,(s.GP||0),ip,s.R,(s.ER||0),s.SO,s.W,s.L,s.SV,era.toFixed(2)];
     vals.forEach(v=>{ const td=document.createElement("td"); td.textContent=String(v); tr.appendChild(td); });
     tbl.appendChild(tr);
   }
@@ -2454,7 +2454,7 @@ function renderStats(){
   const tbl=el("battingTable");
   tbl.innerHTML="";
   if(!team) return;
-  const head=["Player","AB","H","2B","3B","HR","RBI","R","BB","SO","SF","AVG"];
+  const head=["Player","AB","H","HR","RBI","R","AVG"];
   const trh=document.createElement("tr");
   head.forEach(h=>{ const th=document.createElement("th"); th.textContent=h; trh.appendChild(th); });
   tbl.appendChild(trh);
@@ -2462,7 +2462,7 @@ function renderStats(){
     ensureBat(p.id);
     const s=state.season.batting[p.id];
     const tr=document.createElement("tr");
-    const vals=[`${p.name} (${p.pos})`,s.AB,s.H,s["2B"],s["3B"],s.HR,s.RBI,s.R,s.BB,s.SO,(s.SF||0),battingAvg(s).toFixed(3).replace(/^0/,"")];
+    const vals=[`${p.name} (${p.pos})`,s.AB,s.H,s.HR,s.RBI,s.R,battingAvg(s).toFixed(3).replace(/^0/,"")];
     vals.forEach(v=>{ const td=document.createElement("td"); td.textContent=String(v); tr.appendChild(td); });
     tbl.appendChild(tr);
   }
@@ -2788,10 +2788,10 @@ function renderHistory(){
         const s = p.line || {};
         const ab = Number(s.AB)||0, hh = Number(s.H)||0;
         if(!ab && !Number(s.BB) && !Number(s.R)) continue; // skip empty lines
-        rows.push([t.name, `${p.name} (${p.pos||""})`, ab, hh, s["2B"]||0, s["3B"]||0, s.HR||0, s.RBI||0, s.R||0, s.BB||0, s.SO||0, s.SF||0, (ab? (hh/ab):0).toFixed(3).replace(/^0/,"")]);
+        rows.push([t.name, `${p.name} (${p.pos||""})`, ab, hh, s.HR||0, s.RBI||0, s.R||0, (ab? (hh/ab):0).toFixed(3).replace(/^0/,"")]);
       }
     }
-    batEl.innerHTML = _histTable(["Team","Player","AB","H","2B","3B","HR","RBI","R","BB","SO","SF","AVG"], rows);
+    batEl.innerHTML = _histTable(["Team","Player","AB","H","HR","RBI","R","AVG"], rows);
   }
 
   const rrEl = el("histReRating");
@@ -2818,10 +2818,10 @@ function renderHistory(){
         const outs = Number(s.OUTS)||0;
         if(!outs && !Number(s.GP)) continue;
         const era = outs ? ((getER(s)*9)/(outs/3)) : 0;
-        rows.push([t.name, p.name, s.GP||0, outsToIP(outs), s.H||0, s.R||0, getER(s), s.HR||0, s.BB||0, s.SO||0, s.W||0, s.L||0, s.SV||0, era.toFixed(2)]);
+        rows.push([t.name, p.name, s.GP||0, outsToIP(outs), s.R||0, getER(s), s.SO||0, s.W||0, s.L||0, s.SV||0, era.toFixed(2)]);
       }
     }
-    pitEl.innerHTML = _histTable(["Team","Pitcher","GP","IP","H","R","ER","HR","BB","SO","W","L","SV","ERA"], rows);
+    pitEl.innerHTML = _histTable(["Team","Pitcher","GP","IP","R","ER","SO","W","L","SV","ERA"], rows);
   }
 }
 
@@ -2861,20 +2861,22 @@ function ipToOuts(ip){
   return whole*3 + Math.min(frac,2);
 }
 
-const HIST_TEMPLATE_HEADER = ["Section","Season","Team","Player","Pos","AB","H","2B","3B","HR","RBI","R","BB","SO","SF","GP","IP","P_H","P_R","P_ER","P_HR","P_BB","P_SO","W","L","SV","MVP","Award"];
+const HIST_TEMPLATE_HEADER = ["Section","Season","Team","Player","Pos","AB","H","HR","RBI","R","GP","IP","P_R","P_ER","P_SO","W","L","SV","MVP","Award"];
+// Extra columns from older/full exports (2B,3B,BB,SO,SF,P_H,P_HR,P_BB) are still read if present.
+const HIST_OPTIONAL_COLS = ["2B","3B","BB","SO","SF","P_H","P_HR","P_BB"];
 
 function downloadHistTemplate(){
   const rows = [
     HIST_TEMPLATE_HEADER,
-    ["Batting","1","Tigers","John Smith","SS","210","63","12","2","18","55","48","20","30","3","","","","","","","","","","","","4"],
-    ["Pitching","1","Tigers","Bob Jones","","","","","","","","","","","","14","88.2","75","40","38","9","25","70","8","4","0",""],
-    ["Record","1","Tigers","","","","","","","","","","","","","","","","","","","","","30","18","",""],
-    ["Champion","1","Tigers","","","","","","","","","","","","","","","","","","","","","","","",""],
-    ["AllStar","1","Tigers","John Smith","SS","","","","","","","","","","","","","","","","","","","","","",""],
-    ["Award","1","Tigers","John Smith","MVP","","","","","","","","","","","","","","","","","","","","","",""],
+    ["Batting","1","Tigers","John Smith","SS","210","63","18","55","48","","","","","","","","","4",""],
+    ["Pitching","1","Tigers","Bob Jones","","","","","","","14","88.2","40","40","70","8","4","0","",""],
+    ["Record","1","Tigers","","","","","","","","","","","","","30","18","","",""],
+    ["Champion","1","Tigers","","","","","","","","","","","","","","","","",""],
+    ["AllStar","1","Tigers","John Smith","SS","","","","","","","","","","","","","","",""],
+    ["Award","1","Tigers","John Smith","","","","","","","","","","","","","","","","MVP"],
   ];
   downloadText("BHBL_History_Import_Template.csv", toCsv(rows));
-  alert("Template downloaded.\n\nRow types:\n• Batting — one row per player per season (AB through SF)\n• Pitching — one row per pitcher per season (GP, IP like 88.2, then pitching H/R/ER/HR/BB/SO, W, L, SV)\n• Record — one row per team per season: W and L go in the W/L columns\n• Champion — one row per season: Team = champion\n• AllStar — one row per All-Star (Pos = C/1B/2B/3B/SS/OF/SP/RP)\n• Award — one row per award; put the award code in the Pos column: MVP, CY (Cy Young), WSMVP (World Series MVP), or BC (Batting Champ)\n\nLeave unused columns empty. SF and MVP can be blank if you didn't track them. IP uses baseball notation (88.2 = 88⅔). Use the same player spelling across seasons so career totals connect.");
+  alert("Template downloaded.\n\nRow types:\n• Batting — one row per player per season: AB, H, HR, RBI, R (R optional), MVP points\n• Pitching — one row per pitcher per season: GP, IP (baseball notation, 88.2 = 88⅔), P_R (runs allowed), P_ER (same as P_R if you don't split them), P_SO, W, L, SV\n• Record — one row per team per season: W and L columns\n• Champion — one row per season: Team = champion\n• AllStar — one row per All-Star (Pos = C/1B/2B/3B/SS/OF/SP/RP)\n• Award — one row per award; Award column = MVP, CyYoung, BattingChamp, or WSMVP\n\nLeave unused columns empty. Use the same player spelling across seasons so career totals connect.");
 }
 
 function importHistoricalCsv(){
@@ -2886,7 +2888,7 @@ function importHistoricalCsv(){
       if(rows.length < 2) throw new Error("CSV has no data rows.");
       const head = rows[0].map(h=>String(h).trim().toLowerCase());
       const col = {};
-      HIST_TEMPLATE_HEADER.forEach(h=>{ col[h] = head.indexOf(h.toLowerCase()); });
+      [...HIST_TEMPLATE_HEADER, ...HIST_OPTIONAL_COLS].forEach(h=>{ col[h] = head.indexOf(h.toLowerCase()); });
       if(col.Section<0 || col.Season<0 || col.Team<0) throw new Error("Missing required columns: Section, Season, Team. Download the template for the exact header.");
 
       const get = (r,name)=> (col[name]>=0 ? String(r[col[name]]??"").trim() : "");
@@ -3210,11 +3212,10 @@ function renderRecords(){
     });
     rows.sort((a,b)=>b.sortVal-a.sortVal);
     cbEl.innerHTML = _histTable(
-      ["Player","Seasons","Teams","AB","H","2B","3B","HR","RBI","R","BB","SO","SF","MVP","AVG"],
+      ["Player","Seasons","Teams","AB","H","HR","RBI","R","MVP","AVG"],
       rows.map(({c,avg})=>[
         c.name, c.seasons.size, [...c.teams].join(", "),
-        c.line.AB, c.line.H, c.line["2B"], c.line["3B"], c.line.HR, c.line.RBI,
-        c.line.R, c.line.BB, c.line.SO, c.line.SF, c.line.MVP,
+        c.line.AB, c.line.H, c.line.HR, c.line.RBI, c.line.R, c.line.MVP,
         avg.toFixed(3).replace(/^0/,"")
       ])
     );
@@ -3235,11 +3236,11 @@ function renderRecords(){
     });
     rows.sort((a,b)=>b.sortVal-a.sortVal);
     cpEl.innerHTML = _histTable(
-      ["Pitcher","Seasons","Teams","GP","IP","H","R","ER","HR","BB","SO","W","L","SV","ERA"],
+      ["Pitcher","Seasons","Teams","GP","IP","R","ER","SO","W","L","SV","ERA"],
       rows.map(({c,era})=>[
         c.name, c.seasons.size, [...c.teams].join(", "),
-        c.line.GP, outsToIP(c.line.OUTS), c.line.H, c.line.R, c.ER, c.line.HR,
-        c.line.BB, c.line.SO, c.line.W, c.line.L, c.line.SV, era.toFixed(2)
+        c.line.GP, outsToIP(c.line.OUTS), c.line.R, c.ER,
+        c.line.SO, c.line.W, c.line.L, c.line.SV, era.toFixed(2)
       ])
     );
   }
@@ -4126,22 +4127,22 @@ function checkLeaderChanges(){
 /* Exports */
 function exportSeasonCsv(){
   const rows=[];
-  rows.push(["Type","Player","Team","AB","H","HR","RBI","R","BB","SO","2B","3B","SF","AVG"]);
+  rows.push(["Type","Player","Team","AB","H","HR","RBI","R","AVG"]);
   for(const t of state.teams){
     for(const p of (t.roster||[])){
       const s = state.season.batting[p.id] || { AB:0,H:0,HR:0,RBI:0,R:0,BB:0,SO:0,"2B":0,"3B":0 };
       const avg = s.AB ? (s.H/s.AB) : 0;
-      rows.push(["Batting",p.name,t.name,s.AB,s.H,s.HR,s.RBI,s.R,s.BB,s.SO,s["2B"]||0,s["3B"]||0,s.SF||0,avg.toFixed(3)]);
+      rows.push(["Batting",p.name,t.name,s.AB,s.H,s.HR,s.RBI,s.R,avg.toFixed(3)]);
     }
   }
   rows.push([]);
-  rows.push(["Type","Pitcher","Team","GP","IP","OUTS","H","R","ER","HR","BB","SO","W","L","SV","ERA"]);
+  rows.push(["Type","Pitcher","Team","GP","IP","OUTS","R","ER","SO","W","L","SV","ERA"]);
   for(const t of state.teams){
     for(const p of (t.pitchers||[])){
       const s = state.season.pitching[p.id] || { OUTS:0,H:0,R:0,ER:0,HR:0,BB:0,SO:0,W:0,L:0,SV:0 };
       const ip = outsToIP(s.OUTS||0);
       const era = s.OUTS ? (((s.ER||0)*9)/(s.OUTS/3)) : 0;
-      rows.push(["Pitching",p.name,t.name,(s.GP||0),ip,s.OUTS||0,s.H||0,s.R||0,(s.ER||0),s.HR||0,s.BB||0,s.SO||0,s.W||0,s.L||0,s.SV||0,era.toFixed(2)]);
+      rows.push(["Pitching",p.name,t.name,(s.GP||0),ip,s.OUTS||0,s.R||0,(s.ER||0),s.SO||0,s.W||0,s.L||0,s.SV||0,era.toFixed(2)]);
     }
   }
   downloadText("BHBL_Season_Stats.csv", toCsv(rows));
@@ -4159,7 +4160,7 @@ function exportScheduleCsv(){
 function exportBoxscoresCsv(){
   const rows=[];
   const byId = Object.fromEntries(state.teams.map(t=>[t.id,t.name]));
-  rows.push(["GameNo","Away","Home","AwayScore","HomeScore","Section","Player","Team","AB","H","HR","RBI","R","BB","SO","2B","3B","SF","IP","OUTS","PH","PR","PER","PHR","PBB","PSO"]);
+  rows.push(["GameNo","Away","Home","AwayScore","HomeScore","Section","Player","Team","AB","H","HR","RBI","R","IP","OUTS","PR","PER","PSO"]);
   for(const g of (state.gameHistory||[])){
     const away = byId[g.awayId]||"";
     const home = byId[g.homeId]||"";
@@ -4167,14 +4168,14 @@ function exportBoxscoresCsv(){
       const p=getPlayer(pid);
       const team=teamOfPlayer(pid)?.name||"";
       const s=g.box.batting[pid];
-      rows.push([g.gameNo||"",away,home,g.awayScore,g.homeScore,"Batting",p?.name||"",team,s.AB||0,s.H||0,s.HR||0,s.RBI||0,s.R||0,s.BB||0,s.SO||0,s["2B"]||0,s["3B"]||0,s.SF||0,"","","","","","",""]);
+      rows.push([g.gameNo||"",away,home,g.awayScore,g.homeScore,"Batting",p?.name||"",team,s.AB||0,s.H||0,s.HR||0,s.RBI||0,s.R||0,"","","","",""]);
     }
     for(const pid in (g.box?.pitching||{})){
       const team = (getTeam(g.homeId)?.pitchers||[]).some(x=>x.id===pid) ? (byId[g.homeId]||"") :
                    (getTeam(g.awayId)?.pitchers||[]).some(x=>x.id===pid) ? (byId[g.awayId]||"") : "";
       const s=g.box.pitching[pid];
       const name = getPitcher(g.homeId,pid)?.name || getPitcher(g.awayId,pid)?.name || getPlayer(pid)?.name || "";
-      rows.push([g.gameNo||"",away,home,g.awayScore,g.homeScore,"Pitching",name,team,"","","","","","","","","","",outsToIP(s.OUTS||0),s.OUTS||0,s.H||0,s.R||0,(s.ER||0),s.HR||0,s.BB||0,s.SO||0]);
+      rows.push([g.gameNo||"",away,home,g.awayScore,g.homeScore,"Pitching",name,team,"","","","","",outsToIP(s.OUTS||0),s.OUTS||0,s.R||0,(s.ER||0),s.SO||0]);
     }
   }
   downloadText("BHBL_Boxscores.csv", toCsv(rows));

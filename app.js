@@ -1,4 +1,4 @@
-const APP_VERSION = "5.11.3";
+const APP_VERSION = "5.12.0";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -2470,6 +2470,112 @@ function renderStats(){
 
 
 /*** Franchise mode: archive seasons, carry rosters forward ***/
+
+/*** Season honors: MVP, Cy Young, Batting Champ, WS MVP, Best Record, All-Star Team ***/
+function _batScore(s, winPct){
+  const ab=Number(s.AB)||0, h=Number(s.H)||0, bb=Number(s.BB)||0, hr=Number(s.HR)||0,
+        rbi=Number(s.RBI)||0, dbl=Number(s["2B"])||0, tpl=Number(s["3B"])||0;
+  const singles=Math.max(0,h-dbl-tpl-hr);
+  const obp=((ab+bb)>0)?((h+bb)/(ab+bb)):0;
+  const slg=(ab>0)?((singles+2*dbl+3*tpl+4*hr)/ab):0;
+  const avg=(ab>0)?(h/ab):0;
+  return (avg*1000)+(hr*35)+(rbi*7)+((obp+slg)*100)+(h*2)+((winPct||0)*30);
+}
+function _pitchScore(s){
+  const outs=Number(s.OUTS)||0; if(outs<=0) return -Infinity;
+  const ip=outs/3, er=getER(s), h=Number(s.H)||0, bb=Number(s.BB)||0,
+        so=Number(s.SO)||0, w=Number(s.W)||0, sv=Number(s.SV)||0;
+  const era=9*er/ip, whip=(bb+h)/ip;
+  return (ip*4)+(so*1.5)+(w*6)+(sv*4)-(era*25)-(whip*15);
+}
+function _rpScore(s){
+  const outs=Number(s.OUTS)||0; if(outs<=0) return -Infinity;
+  const ip=outs/3, er=getER(s), so=Number(s.SO)||0, sv=Number(s.SV)||0;
+  const era=9*er/ip;
+  return (sv*8)+(so*1.5)+(ip*2)-(era*12);
+}
+
+function computeSeasonHonors(standRows){
+  const finals = (state.schedule||[]).filter(g=>g.status==="final").length;
+  const minAB = Math.min(50, Math.max(10, Math.floor(finals*1.5) || 10));
+  const wpByTeam = {};
+  for(const r of (standRows||[])) wpByTeam[r.name] = (r.GP ? r.W/r.GP : 0);
+
+  // batters with team context
+  const batters=[];
+  for(const t of state.teams){
+    for(const p of (t.roster||[])){
+      const s = state.season.batting[p.id];
+      const ab = Number(s?.AB)||0;
+      if(ab < minAB) continue;
+      batters.push({ name:p.name, team:t.name, pos:String(p.pos||"").toUpperCase(),
+                     avg:(Number(s.H)||0)/ab, score:_batScore(s, wpByTeam[t.name]) });
+    }
+  }
+  // pitchers with role context
+  const pitchers=[];
+  for(const t of state.teams){
+    for(const p of (t.pitchers||[])){
+      const s = state.season.pitching[p.id];
+      if(!s || !(Number(s.OUTS)||0)) continue;
+      pitchers.push({ name:p.name, team:t.name, role:String(p.role||"").toUpperCase(),
+                      score:_pitchScore(s), rpScore:_rpScore(s) });
+    }
+  }
+
+  const top = (arr, key="score")=> arr.slice().sort((a,b)=>b[key]-a[key])[0] || null;
+  const mvpW = top(batters);
+  const cyW  = top(pitchers);
+  const bcW  = top(batters.map(b=>({...b, score:b.avg})));
+  const br   = (standRows&&standRows[0]) ? { team:standRows[0].name, W:standRows[0].W, L:standRows[0].L } : null;
+
+  // WS MVP: champion team's best playoff performer (batter vs pitcher heuristic)
+  let wsMvp = null;
+  const champId = state.season?.playoffs?.championTeamId || null;
+  if(champId){
+    const champ = getTeam(champId);
+    const ps = state.season.playoffStats || {batting:{},pitching:{}};
+    let bestB=null, bestP=null;
+    for(const p of (champ?.roster||[])){
+      const s = ps.batting[p.id];
+      if(!s || (Number(s.AB)||0) < 6) continue;
+      const sc = _batScore(s, 0);
+      if(!bestB || sc>bestB.score) bestB={name:p.name, team:champ.name, score:sc};
+    }
+    for(const p of (champ?.pitchers||[])){
+      const s = ps.pitching[p.id];
+      if(!s || !(Number(s.OUTS)||0)) continue;
+      const sc = _pitchScore(s);
+      if(!bestP || sc>bestP.score) bestP={name:p.name, team:champ.name, score:sc};
+    }
+    wsMvp = (bestB && bestP) ? ((bestB.score >= bestP.score*2.5) ? bestB : bestP) : (bestB || bestP);
+    if(wsMvp) wsMvp = { name:wsMvp.name, team:wsMvp.team };
+  }
+
+  // All-Star team: C,1B,2B,3B,SS, OF x3, SP x2, RP x2
+  const allStars = [];
+  const used = new Set();
+  const pickBat = (slot)=>{
+    const c = batters.filter(b=>!used.has(normName(b.name)) && b.pos.includes(slot))
+                     .sort((a,b)=>b.score-a.score)[0];
+    if(c){ used.add(normName(c.name)); allStars.push({pos:slot, name:c.name, team:c.team}); }
+  };
+  pickBat("C"); pickBat("1B"); pickBat("2B"); pickBat("3B"); pickBat("SS");
+  for(let i=0;i<3;i++) pickBat("OF");
+  const sps = pitchers.filter(p=>p.role!=="RP").sort((a,b)=>b.score-a.score);
+  for(const c of sps.slice(0,2)) allStars.push({pos:"SP", name:c.name, team:c.team});
+  const rps = pitchers.filter(p=>p.role==="RP").sort((a,b)=>b.rpScore-a.rpScore);
+  for(const c of rps.slice(0,2)) allStars.push({pos:"RP", name:c.name, team:c.team});
+
+  const awards = {};
+  if(mvpW) awards.MVP = {name:mvpW.name, team:mvpW.team};
+  if(cyW) awards.CY = {name:cyW.name, team:cyW.team};
+  if(bcW) awards.BC = {name:bcW.name, team:bcW.team, avg:bcW.score.toFixed(3).replace(/^0/,"")};
+  if(wsMvp) awards.WSMVP = wsMvp;
+  if(br) awards.BEST = br;
+  return { awards, allStars };
+}
+
 function seasonChampionName(){
   const cid = state.season?.playoffs?.championTeamId || null;
   return cid ? (getTeam(cid)?.name || null) : null;
@@ -2501,6 +2607,7 @@ function startNewSeason(){
     seasonNumber: sn,
     completedAt: new Date().toISOString(),
     champion: champ,
+    ...computeSeasonHonors(standRows), // { awards, allStars }
     gamesPlayed: (state.schedule||[]).filter(g=>g.status==="final").length,
     standings: standRows,
     teams: state.teams.map(t=>({
@@ -2536,7 +2643,6 @@ function startNewSeason(){
     }
   }
   snapshot.reRating = reRating;
-
   state.franchise = state.franchise || { seasonNumber:1, history:[] };
   state.franchise.history.push(snapshot);
   state.franchise.seasonNumber = sn + 1;
@@ -2641,6 +2747,32 @@ function renderHistory(){
   const when = h.completedAt ? new Date(h.completedAt).toLocaleDateString() : "";
   if(info) info.innerHTML = `<div class="row"><span class="pill">Season ${h.seasonNumber}</span><span class="pill">${h.gamesPlayed} games</span><span class="pill">${h.champion ? "🏆 " + h.champion : "No champion recorded"}</span><span class="pill">Archived ${when}</span></div>`;
 
+  const honEl = el("histHonors");
+  if(honEl){
+    const a = h.awards || {};
+    const stars = h.allStars || [];
+    if(!h.champion && !a.MVP && !a.CY && !a.BC && !a.WSMVP && !a.BEST && !stars.length){
+      honEl.innerHTML = `<div class="small">No honors recorded for this season.</div>`;
+    } else {
+      const item = (label, v)=> v ? `<div class="champCard"><div class="champSeason">${label}</div><div class="champName">${v}</div></div>` : "";
+      const cards = [
+        item("League Champ", h.champion ? `🏆 ${h.champion}` : null),
+        item("Best Record", a.BEST ? `${a.BEST.team}${(a.BEST.W!=null)?` (${a.BEST.W}-${a.BEST.L})`:""}` : null),
+        item("MVP", a.MVP ? `${a.MVP.name} <span class="small">(${a.MVP.team})</span>` : null),
+        item("Cy Young", a.CY ? `${a.CY.name} <span class="small">(${a.CY.team})</span>` : null),
+        item("Batting Champ", a.BC ? `${a.BC.name}${a.BC.avg?` ${a.BC.avg}`:""} <span class="small">(${a.BC.team})</span>` : null),
+        item("WS MVP", a.WSMVP ? `${a.WSMVP.name} <span class="small">(${a.WSMVP.team})</span>` : null),
+      ].join("");
+      let asHtml = "";
+      if(stars.length){
+        const order = { "C":0,"1B":1,"2B":2,"3B":3,"SS":4,"OF":5,"SP":6,"RP":7 };
+        const sorted = stars.slice().sort((x,y)=>(order[x.pos]??9)-(order[y.pos]??9));
+        asHtml = `<h3>All-Star Team</h3>` + _histTable(["Pos","Player","Team"], sorted.map(s=>[s.pos, s.name, s.team]));
+      }
+      honEl.innerHTML = `<div class="champBanner">${cards}</div>${asHtml}`;
+    }
+  }
+
   if(standEl){
     standEl.innerHTML = _histTable(
       ["Team","Div","GP","W","L","Pct","RF","RA","RD"],
@@ -2729,7 +2861,7 @@ function ipToOuts(ip){
   return whole*3 + Math.min(frac,2);
 }
 
-const HIST_TEMPLATE_HEADER = ["Section","Season","Team","Player","Pos","AB","H","2B","3B","HR","RBI","R","BB","SO","SF","GP","IP","P_H","P_R","P_ER","P_HR","P_BB","P_SO","W","L","SV","MVP"];
+const HIST_TEMPLATE_HEADER = ["Section","Season","Team","Player","Pos","AB","H","2B","3B","HR","RBI","R","BB","SO","SF","GP","IP","P_H","P_R","P_ER","P_HR","P_BB","P_SO","W","L","SV","MVP","Award"];
 
 function downloadHistTemplate(){
   const rows = [
@@ -2738,9 +2870,11 @@ function downloadHistTemplate(){
     ["Pitching","1","Tigers","Bob Jones","","","","","","","","","","","","14","88.2","75","40","38","9","25","70","8","4","0",""],
     ["Record","1","Tigers","","","","","","","","","","","","","","","","","","","","","30","18","",""],
     ["Champion","1","Tigers","","","","","","","","","","","","","","","","","","","","","","","",""],
+    ["AllStar","1","Tigers","John Smith","SS","","","","","","","","","","","","","","","","","","","","","",""],
+    ["Award","1","Tigers","John Smith","MVP","","","","","","","","","","","","","","","","","","","","","",""],
   ];
   downloadText("BHBL_History_Import_Template.csv", toCsv(rows));
-  alert("Template downloaded.\n\nRow types:\n• Batting — one row per player per season (AB through SF)\n• Pitching — one row per pitcher per season (GP, IP like 88.2, then pitching H/R/ER/HR/BB/SO, W, L, SV)\n• Record — one row per team per season: W and L go in the W/L columns\n• Champion — one row per season: Team = champion\n\nLeave unused columns empty. SF and MVP can be blank if you didn't track them. IP uses baseball notation (88.2 = 88⅔). Use the same player spelling across seasons so career totals connect.");
+  alert("Template downloaded.\n\nRow types:\n• Batting — one row per player per season (AB through SF)\n• Pitching — one row per pitcher per season (GP, IP like 88.2, then pitching H/R/ER/HR/BB/SO, W, L, SV)\n• Record — one row per team per season: W and L go in the W/L columns\n• Champion — one row per season: Team = champion\n• AllStar — one row per All-Star (Pos = C/1B/2B/3B/SS/OF/SP/RP)\n• Award — one row per award; put the award code in the Pos column: MVP, CY (Cy Young), WSMVP (World Series MVP), or BC (Batting Champ)\n\nLeave unused columns empty. SF and MVP can be blank if you didn't track them. IP uses baseball notation (88.2 = 88⅔). Use the same player spelling across seasons so career totals connect.");
 }
 
 function importHistoricalCsv(){
@@ -2758,17 +2892,18 @@ function importHistoricalCsv(){
       const get = (r,name)=> (col[name]>=0 ? String(r[col[name]]??"").trim() : "");
       const getN = (r,name)=> Number(get(r,name))||0;
 
-      const seasons = new Map(); // seasonNumber -> {champion, records:[], teams:Map name->{batters,pitchers}}
+      const seasons = new Map(); // seasonNumber -> {champion, records:[], teams:Map, awards, allStars}
       const getSeason = (sn)=>{
         if(!seasons.has(sn)) seasons.set(sn, { champion:null, records:[], teams:new Map() });
         return seasons.get(sn);
       };
+      const AWARD_CODES = { "MVP":"MVP", "CY":"CY", "CYYOUNG":"CY", "WSMVP":"WSMVP", "WORLDSERIESMVP":"WSMVP", "BC":"BC", "BATTINGCHAMP":"BC", "BATTINGCHAMPION":"BC" };
       const getSeasonTeam = (S, name)=>{
         if(!S.teams.has(name)) S.teams.set(name, { name, batters:[], pitchers:[] });
         return S.teams.get(name);
       };
 
-      let nBat=0, nPit=0, nRec=0, nChamp=0, skippedRows=0;
+      let nBat=0, nPit=0, nRec=0, nChamp=0, nHonor=0, skippedRows=0;
       for(let i=1;i<rows.length;i++){
         const r = rows[i];
         const sec = get(r,"Section").toLowerCase();
@@ -2803,6 +2938,20 @@ function importHistoricalCsv(){
         } else if(sec==="champion"){
           S.champion = teamName;
           nChamp++;
+        } else if(sec==="allstar"){
+          const player = get(r,"Player");
+          if(!player){ skippedRows++; continue; }
+          S.allStars = S.allStars || [];
+          S.allStars.push({ pos:(get(r,"Pos")||"").toUpperCase(), name:player, team:teamName });
+          nHonor++;
+        } else if(sec==="award"){
+          const player = get(r,"Player");
+          const raw = (get(r,"Award") || get(r,"Pos") || "").toUpperCase().replace(/[^A-Z]/g,"");
+          const code = AWARD_CODES[raw] || null;
+          if(!player || !code){ skippedRows++; continue; }
+          S.awards = S.awards || {};
+          S.awards[code] = { name:player, team:teamName };
+          nHonor++;
         } else {
           skippedRows++;
         }
@@ -2828,6 +2977,10 @@ function importHistoricalCsv(){
             Pct: (rec.W+rec.L) ? (rec.W/(rec.W+rec.L)).toFixed(3).replace(/^0/,"") : "-",
             RF: "-", RA: "-", RD: "-"
           }));
+        const awards = S.awards || {};
+        if(!awards.BEST && standings.length && standings[0].W>0){
+          awards.BEST = { team:standings[0].name, W:standings[0].W, L:standings[0].L };
+        }
         state.franchise.history.push({
           id: uid(),
           seasonNumber: sn,
@@ -2836,6 +2989,8 @@ function importHistoricalCsv(){
           champion: S.champion,
           gamesPlayed: standings.reduce((a,r)=>a+r.W,0),
           standings,
+          awards,
+          allStars: S.allStars || [],
           teams: [...S.teams.values()]
         });
         added++;
@@ -2848,7 +3003,7 @@ function importHistoricalCsv(){
       renderSeasonBadge();
       renderHistory();
       renderRecords();
-      let msg = `Imported ${added} season${added===1?"":"s"} (${nBat} batting, ${nPit} pitching, ${nRec} record, ${nChamp} champion rows).`;
+      let msg = `Imported ${added} season${added===1?"":"s"} (${nBat} batting, ${nPit} pitching, ${nRec} record, ${nChamp} champion, ${nHonor} honor rows).`;
       if(skippedSeasons.length) msg += `\nSkipped season number${skippedSeasons.length===1?"":"s"} already in history: ${skippedSeasons.join(", ")}.`;
       if(skippedRows) msg += `\nIgnored ${skippedRows} incomplete row${skippedRows===1?"":"s"}.`;
       msg += `\nCurrent season is now Season ${state.franchise.seasonNumber}.`;
@@ -2961,8 +3116,85 @@ function renderChampionsBanner(){
   }).join("");
 }
 
+const AWARD_LABELS = { MVP:"MVP", CY:"Cy Young", WSMVP:"WS MVP", BC:"Batting Champ", BEST:"Best Record" };
+
+function renderSeasonHonors(){
+  const elx = el("seasonHonors");
+  if(!elx) return;
+  const hist = (state.franchise?.history||[]).slice().sort((a,b)=>(a.seasonNumber||0)-(b.seasonNumber||0));
+  if(!hist.length){ elx.innerHTML = `<div class="small">No completed seasons yet.</div>`; return; }
+  const fmt = (a)=> a ? `${a.name}${a.avg?` (${a.avg})`:""}<div class="small">${a.team||""}</div>` : `<span class="small">—</span>`;
+  const fmtBest = (b)=> b ? `${b.team}<div class="small">${b.W}-${b.L}</div>` : `<span class="small">—</span>`;
+  elx.innerHTML = _histTable(
+    ["Season","League Champ","WS MVP","MVP","Cy Young","Batting Champ","Best Record"],
+    hist.map(h=>{
+      const a=h.awards||{};
+      return [
+        `S${h.seasonNumber}`,
+        h.champion ? `🏆 ${h.champion}` : `<span class="small">—</span>`,
+        fmt(a.WSMVP), fmt(a.MVP), fmt(a.CY), fmt(a.BC), fmtBest(a.BEST)
+      ];
+    })
+  );
+}
+
+function renderAllStarTeams(){
+  const sel = el("asSeason");
+  const out = el("allStarTeam");
+  if(!sel || !out) return;
+  const hist = (state.franchise?.history||[]).filter(h=>(h.allStars||[]).length)
+    .sort((a,b)=>(b.seasonNumber||0)-(a.seasonNumber||0));
+  const prev = sel.value;
+  sel.innerHTML = "";
+  if(!hist.length){
+    out.innerHTML = `<div class="small">No All-Star teams recorded yet. App seasons select one automatically at archive; imported seasons use AllStar rows in the CSV.</div>`;
+    return;
+  }
+  for(const h of hist){
+    const o=document.createElement("option");
+    o.value=String(h.seasonNumber); o.textContent=`Season ${h.seasonNumber}`;
+    sel.appendChild(o);
+  }
+  if(prev && hist.some(h=>String(h.seasonNumber)===prev)) sel.value=prev;
+  const h = hist.find(x=>String(x.seasonNumber)===sel.value) || hist[0];
+  const order = { "C":0,"1B":1,"2B":2,"3B":3,"SS":4,"OF":5,"SP":6,"RP":7 };
+  const stars = (h.allStars||[]).slice().sort((a,b)=>(order[a.pos]??9)-(order[b.pos]??9));
+  out.innerHTML = _histTable(["Pos","Player","Team"], stars.map(s=>{
+    const t = getTeamByName(s.team);
+    return [s.pos, s.name, `${t?teamDot(t):""}${s.team||""}`];
+  }));
+}
+
+function renderCareerHonors(){
+  const elx = el("careerHonors");
+  if(!elx) return;
+  const counts = new Map(); // normName -> {name, AS, MVP, CY, WSMVP, BC, total}
+  const bumpHonor = (name, key)=>{
+    if(!name) return;
+    const k=normName(name);
+    if(!counts.has(k)) counts.set(k, { name, AS:0, MVP:0, CY:0, WSMVP:0, BC:0 });
+    counts.get(k)[key] += 1;
+  };
+  for(const h of (state.franchise?.history||[])){
+    for(const s of (h.allStars||[])) bumpHonor(s.name, "AS");
+    const a=h.awards||{};
+    for(const code of ["MVP","CY","WSMVP","BC"]) if(a[code]) bumpHonor(a[code].name, code);
+  }
+  if(!counts.size){ elx.innerHTML = `<div class="small">No honors recorded yet.</div>`; return; }
+  const rows = [...counts.values()]
+    .map(c=>({ ...c, total:c.AS+c.MVP+c.CY+c.WSMVP+c.BC }))
+    .sort((a,b)=>b.total-a.total || b.MVP-a.MVP || b.AS-a.AS);
+  elx.innerHTML = _histTable(
+    ["Player","All-Star","MVP","Cy Young","WS MVP","Batting Champ","Total"],
+    rows.map(c=>[c.name, c.AS, c.MVP, c.CY, c.WSMVP, c.BC, c.total])
+  );
+}
+
 function renderRecords(){
   renderChampionsBanner();
+  renderSeasonHonors();
+  renderAllStarTeams();
+  renderCareerHonors();
 
   const { batRows, pitRows } = collectAllSeasonRows();
   const { bat, pit } = careerTotals();
@@ -3576,6 +3808,7 @@ function init(){
   if(el("histTeam")) el("histTeam").onchange = renderHistory;
   if(el("deleteHistSeason")) el("deleteHistSeason").onclick = deleteHistorySeason;
   if(el("careerBatSort")) el("careerBatSort").onchange = renderRecords;
+  if(el("asSeason")) el("asSeason").onchange = renderAllStarTeams;
   if(el("careerPitchSort")) el("careerPitchSort").onchange = renderRecords;
   if(el("downloadHistTemplate")) el("downloadHistTemplate").onclick = downloadHistTemplate;
   if(el("importHistBtn")) el("importHistBtn").onclick = importHistoricalCsv;

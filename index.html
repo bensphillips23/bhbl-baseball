@@ -411,6 +411,22 @@
         <div class="champBanner" id="championsBanner"></div>
       </div>
       <div class="card" style="margin-top:12px">
+        <h2>Season Honors</h2>
+        <div class="hint">Awards for app-played seasons are selected automatically when you archive; imported seasons use Award rows in the CSV. League leaders for every category are in Single-Season Records below.</div>
+        <div class="tableWrap" id="seasonHonors"></div>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <h2>All-Star Teams</h2>
+        <div class="row">
+          <label>Season</label><select id="asSeason"></select>
+        </div>
+        <div class="tableWrap" id="allStarTeam"></div>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <h2>Career Honors</h2>
+        <div class="tableWrap" style="max-height:360px" id="careerHonors"></div>
+      </div>
+      <div class="card" style="margin-top:12px">
         <h2>Career Batting</h2>
         <div class="row">
           <label>Sort by</label>
@@ -479,6 +495,8 @@
           <button id="deleteHistSeason" class="danger">Delete This Season</button>
         </div>
         <div id="histInfo"></div>
+        <h3>Season Honors</h3>
+        <div id="histHonors"></div>
         <h3>Final Standings</h3>
         <div class="tableWrap" id="histStandings"></div>
         <h3>Offseason Re-Rating</h3>

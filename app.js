@@ -1,4 +1,4 @@
-const APP_VERSION = "5.12.1";
+const APP_VERSION = "5.12.2";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -2899,7 +2899,7 @@ function importHistoricalCsv(){
         if(!seasons.has(sn)) seasons.set(sn, { champion:null, records:[], teams:new Map() });
         return seasons.get(sn);
       };
-      const AWARD_CODES = { "MVP":"MVP", "CY":"CY", "CYYOUNG":"CY", "WSMVP":"WSMVP", "WORLDSERIESMVP":"WSMVP", "BC":"BC", "BATTINGCHAMP":"BC", "BATTINGCHAMPION":"BC" };
+      const AWARD_CODES = { "MVP":"MVP", "CY":"CY", "CYYOUNG":"CY", "WSMVP":"WSMVP", "WORLDSERIESMVP":"WSMVP", "BC":"BC", "BATTINGCHAMP":"BC", "BATTINGCHAMPION":"BC", "BESTRECORD":"BEST", "BEST":"BEST" };
       const getSeasonTeam = (S, name)=>{
         if(!S.teams.has(name)) S.teams.set(name, { name, batters:[], pitchers:[] });
         return S.teams.get(name);
@@ -2950,9 +2950,14 @@ function importHistoricalCsv(){
           const player = get(r,"Player");
           const raw = (get(r,"Award") || get(r,"Pos") || "").toUpperCase().replace(/[^A-Z]/g,"");
           const code = AWARD_CODES[raw] || null;
-          if(!player || !code){ skippedRows++; continue; }
+          if(!code){ skippedRows++; continue; }
           S.awards = S.awards || {};
-          S.awards[code] = { name:player, team:teamName };
+          if(code==="BEST"){
+            S.awards.BEST = { team: teamName, W:null, L:null };
+          } else {
+            if(!player){ skippedRows++; continue; }
+            S.awards[code] = { name:player, team:teamName };
+          }
           nHonor++;
         } else {
           skippedRows++;
@@ -2982,6 +2987,11 @@ function importHistoricalCsv(){
         const awards = S.awards || {};
         if(!awards.BEST && standings.length && standings[0].W>0){
           awards.BEST = { team:standings[0].name, W:standings[0].W, L:standings[0].L };
+        } else if(awards.BEST && (awards.BEST.W==null)){
+          const want = normName(awards.BEST.team);
+          const m = standings.find(x=>normName(x.name)===want)
+                 || standings.find(x=>normName(x.name).includes(want) || want.includes(normName(x.name)));
+          if(m){ awards.BEST.team = m.name; awards.BEST.W = m.W; awards.BEST.L = m.L; }
         }
         state.franchise.history.push({
           id: uid(),

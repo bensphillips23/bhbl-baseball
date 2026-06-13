@@ -38,6 +38,8 @@ def convert(xls_path, season_number, out_path, champion=None):
 
     for sheet_name, df in sheets.items():
         if sheet_name.strip().lower() == "template": continue
+        if sheet_name.strip().lower().startswith("awards"):
+            continue  # handled separately below
         grid = df.values.tolist()
         team = clean(grid[0][0]) or sheet_name
         col0 = [clean(r[0]) for r in grid]
@@ -92,6 +94,59 @@ def convert(xls_path, season_number, out_path, champion=None):
             rows.append([row[k] for k in H])
 
         teams_done.append((team, nb, np))
+
+    # ---- Awards All Star sheet (optional): All Stars, Award Winners, Standings/Champion ----
+    award_map = {
+        "cy young":"CyYoung", "cyyoung":"CyYoung",
+        "mvp":"MVP",
+        "batting champ":"BattingChamp", "batting champion":"BattingChamp",
+        "world series mvp":"WSMVP", "ws mvp":"WSMVP",
+    }
+    aw_sheet = next((s for s in sheets if s.strip().lower().startswith("awards")), None)
+    auto_champ = None
+    if aw_sheet is not None:
+        g = sheets[aw_sheet].values.tolist()
+        def col_of(grid, *labels):
+            for ri, r in enumerate(grid):
+                for ci, v in enumerate(r):
+                    if clean(v).lower() in labels:
+                        return ri, ci
+            return -1, -1
+        as_r, as_c = col_of(g, "all stars")
+        aw_r, aw_c = col_of(g, "award winners")
+
+        # All Stars block: header at (as_r, as_c). Layout per row:
+        #   position at as_c-1, player name at as_c, team at as_c+1.
+        # Data begins on the header row itself and continues downward.
+        if as_r >= 0:
+            for r in g[as_r:]:
+                pos  = clean(r[as_c-1]) if as_c-1 >= 0 and len(r) > as_c-1 else ""
+                name = clean(r[as_c])   if len(r) > as_c   else ""
+                team = clean(r[as_c+1]) if len(r) > as_c+1 else ""
+                if name.lower() == "all stars" or team.lower() == "team": continue  # header cells
+                if not name or not pos: continue
+                rows.append([dict(blank, Section="AllStar", Season=season_number, Team=team, Player=name, Pos=pos.upper())[k] for k in H])
+
+        # Award Winners block: label at aw_c, player at aw_c+1, team at aw_c+2.
+        if aw_r >= 0:
+            for r in g[aw_r+1:]:
+                award = clean(r[aw_c])   if len(r) > aw_c   else ""
+                name  = clean(r[aw_c+1]) if len(r) > aw_c+1 else ""
+                team  = clean(r[aw_c+2]) if len(r) > aw_c+2 else ""
+                if not award: continue
+                a_low = award.lower()
+                if a_low == "champion":
+                    auto_champ = name or team
+                    continue
+                if a_low == "best record":
+                    rows.append([dict(blank, Section="Award", Season=season_number, Team=(name or team), Player="", Award="BestRecord")[k] for k in H])
+                    continue
+                code = award_map.get(a_low)
+                if code and name:
+                    rows.append([dict(blank, Section="Award", Season=season_number, Team=team, Player=name, Award=code)[k] for k in H])
+
+    if champion is None and auto_champ:
+        champion = auto_champ
 
     if champion:
         row = dict(blank, Section="Champion", Season=season_number, Team=champion)

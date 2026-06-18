@@ -6,7 +6,7 @@
   <title>BHBL Dice Baseball</title>
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#0b1020" />
-  <link rel="stylesheet" href="styles.css?v=5.13.0" />
+  <link rel="stylesheet" href="styles.css?v=5.14.0" />
   <style id="hofStyles">
     /* ---- Hall of Fame gallery ---- */
     #hof .hofGallery{
@@ -101,6 +101,22 @@
     @media (prefers-reduced-motion:reduce){
       #hof .hofPlaque{ transition:none; }
     }
+
+    /* ---- Team logo badges & picker ---- */
+    #hof .cardHead .cHeadLeft{ display:flex; align-items:center; gap:10px; min-width:0; }
+    #hof .cardTeamLogo{
+      width:38px; height:38px; border-radius:6px; object-fit:cover; background:#fff;
+      box-shadow:0 0 0 2px rgba(255,255,255,.85), 0 1px 3px rgba(0,0,0,.4); flex:0 0 auto;
+    }
+    .logoPresetGrid{ display:grid; gap:10px; grid-template-columns:repeat(auto-fill, minmax(120px,1fr)); margin:8px 0 4px; }
+    .logoChip{
+      display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer;
+      background:#0b1229; border:1px solid #243049; border-radius:10px; padding:10px 8px; color:#cbd5e1;
+    }
+    .logoChip:hover{ border-color:#3b82f6; }
+    .logoChip.selLogo{ border-color:#22c55e; box-shadow:0 0 0 2px rgba(34,197,94,.35); }
+    .logoChip img{ width:72px; height:72px; object-fit:contain; background:#fff; border-radius:8px; }
+    .logoChip span{ font-size:11px; text-align:center; line-height:1.15; }
   </style>
 </head>
 <body>
@@ -703,7 +719,8 @@
   </div>
 
 
-  <script src="app.js?v=5.13.0"></script>
+  <script src="logos.js?v=5.14.0"></script>
+  <script src="app.js?v=5.14.0"></script>
 
   <div class="modal" id="playerEditModal" aria-hidden="true">
     <div class="modalCard">
@@ -760,6 +777,24 @@
         </div>
       </div>
     </div>
+  </div>  <div class="modal" id="logoModal" aria-hidden="true">
+    <div class="modalCard">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Team Logo — <span id="logoModalTeam">Team</span></h2>
+        <button id="logoCloseBtn">Close</button>
+      </div>
+      <div class="hint">Pick a built-in logo or upload your own. Logos show up in standings, the play screen, and on player cards, and are saved with your data (and JSON backups).</div>
+      <h3 class="h3">Built-in logos</h3>
+      <div id="logoPresetGrid" class="logoPresetGrid"></div>
+      <hr class="sep"/>
+      <div class="row" style="align-items:center; flex-wrap:wrap">
+        <label>Upload custom</label>
+        <input id="logoUploadInput" type="file" accept="image/*" />
+        <button id="logoRemoveBtn" class="danger" style="display:none">Remove logo</button>
+      </div>
+      <div class="hint">Square images look best. Big files are automatically resized down to a small badge.</div>
+    </div>
   </div>
+
 </body>
 </html>

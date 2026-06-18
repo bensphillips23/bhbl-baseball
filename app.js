@@ -1,4 +1,4 @@
-const APP_VERSION = "5.13.0";
+const APP_VERSION = "5.14.0";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -100,6 +100,11 @@ function ensureTeamStyle(t, idx=0){
 }
 function teamDot(t){
   const c = t?.color || "#64748b";
+  if(t && t.logo){
+    return `<img class="teamLogoDot" src="${t.logo}" alt="" `
+      + `style="width:16px;height:16px;border-radius:3px;object-fit:cover;background:#fff;`
+      + `vertical-align:middle;margin-right:5px;display:inline-block;box-shadow:0 0 0 1px rgba(0,0,0,.25)"/>`;
+  }
   return `<span class="teamDot" style="background:${c}"></span>`;
 }
 function getTeamByName(name){
@@ -1226,6 +1231,11 @@ function renderLeague(){
 
     row.appendChild(colorIn);
     row.appendChild(abbrIn);
+    const logoBtn=document.createElement("button");
+    logoBtn.textContent = t.logo ? "Logo ✓" : "Logo";
+    logoBtn.title = "Set team logo";
+    logoBtn.onclick = ()=>openLogoPicker(t.id);
+    row.appendChild(logoBtn);
     const del=document.createElement("button");
     del.className="danger"; del.textContent="Delete";
     del.onclick=()=>{
@@ -3443,7 +3453,8 @@ function renderPlayerCard(name){
 
   let html = `<div class="cardBack" style="--team:${esc(teamColor)}">`;
   if(inHof) html += `<div class="cardHof">★ Hall of Fame ★</div>`;
-  html += `<div class="cardHead"><span class="cName">${esc(d.display)}</span><span class="cPos">${esc(posStr)}</span></div>`;
+  const logoHtml = (team && team.logo) ? `<img class="cardTeamLogo" src="${team.logo}" alt=""/>` : "";
+  html += `<div class="cardHead"><span class="cHeadLeft">${logoHtml}<span class="cName">${esc(d.display)}</span></span><span class="cPos">${esc(posStr)}</span></div>`;
   html += `<div class="cardBio">
     <span><b>${d.seasons.length}</b> season${d.seasons.length===1?"":"s"} (${seasonSpan})</span>
     <span><b>${d.teams.length}</b> club${d.teams.length===1?"":"s"}: ${esc(d.teams.join(", "))}</span>
@@ -3590,6 +3601,73 @@ function renderHallOfFame(){
   const cardSel = el("cardSelect");
   fillPlayerSelect(cardSel, cardSel ? cardSel.value : null, {});
   renderPlayerCard(cardSel ? cardSel.value : "");
+}
+
+/* ----------------------------- Team Logos ----------------------------- */
+let _logoTargetTeamId = null;
+
+function openLogoPicker(teamId){
+  _logoTargetTeamId = teamId;
+  const modal = el("logoModal");
+  if(!modal) return;
+  const t = getTeam(teamId);
+  if(el("logoModalTeam")) el("logoModalTeam").textContent = t ? t.name : "Team";
+  if(el("logoRemoveBtn")) el("logoRemoveBtn").style.display = (t && t.logo) ? "" : "none";
+  renderLogoPresets();
+  modal.setAttribute("aria-hidden","false");
+}
+function closeLogoPicker(){
+  const modal = el("logoModal");
+  if(modal) modal.setAttribute("aria-hidden","true");
+  _logoTargetTeamId = null;
+}
+function renderLogoPresets(){
+  const wrap = el("logoPresetGrid");
+  if(!wrap) return;
+  const presets = (window.LOGO_PRESETS||[]);
+  const t = getTeam(_logoTargetTeamId);
+  if(!presets.length){ wrap.innerHTML = `<div class="small">No built-in logos available.</div>`; return; }
+  wrap.innerHTML = presets.map((p,i)=>{
+    const sel = (t && t.logo===p.data) ? " selLogo" : "";
+    return `<button class="logoChip${sel}" data-preset="${i}" title="${esc(p.name)}"><img src="${p.data}" alt="${esc(p.name)}"/><span>${esc(p.name)}</span></button>`;
+  }).join("");
+  wrap.querySelectorAll(".logoChip").forEach(btn=>{
+    btn.onclick = ()=>{ const p=(window.LOGO_PRESETS||[])[Number(btn.dataset.preset)]; if(p) setTeamLogo(p.data); };
+  });
+}
+function setTeamLogo(dataUrl){
+  const t = getTeam(_logoTargetTeamId);
+  if(!t) return;
+  if(dataUrl) t.logo = dataUrl; else delete t.logo;
+  saveState();
+  closeLogoPicker();
+  renderTeamsAll(); renderLeague(); renderPlay();
+  try { renderStandings(); } catch(e){}
+  if(el("hof") && el("hof").classList.contains("active")) renderHallOfFame();
+}
+function handleLogoUpload(file){
+  if(!file) return;
+  if(!/^image\//.test(file.type||"")){ alert("Please choose an image file (PNG or JPG)."); return; }
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const MAX=160;
+      let w=img.width, h=img.height;
+      const scale = Math.min(1, MAX/Math.max(w,h));
+      w=Math.max(1,Math.round(w*scale)); h=Math.max(1,Math.round(h*scale));
+      const cv=document.createElement("canvas"); cv.width=w; cv.height=h;
+      cv.getContext("2d").drawImage(img,0,0,w,h);
+      let out;
+      try { out = cv.toDataURL("image/png"); } catch(e){ out = reader.result; }
+      try { const jpg = cv.toDataURL("image/jpeg",0.82); if(jpg && jpg.length < out.length) out = jpg; } catch(e){}
+      setTeamLogo(out);
+    };
+    img.onerror = ()=>alert("Could not read that image.");
+    img.src = reader.result;
+  };
+  reader.onerror = ()=>alert("Could not read that file.");
+  reader.readAsDataURL(file);
 }
 
 function showTab(tab){
@@ -4112,6 +4190,16 @@ function init(){
     else inductPlayer(key, {});
     renderPlayerCard(key);
   };
+
+  // Team logo picker
+  if(el("logoCloseBtn")) el("logoCloseBtn").onclick = closeLogoPicker;
+  if(el("logoRemoveBtn")) el("logoRemoveBtn").onclick = ()=>setTeamLogo(null);
+  if(el("logoUploadInput")) el("logoUploadInput").onchange = (e)=>{
+    const f = e.target.files && e.target.files[0];
+    handleLogoUpload(f);
+    e.target.value = "";
+  };
+  if(el("logoModal")) el("logoModal").addEventListener("click",(e)=>{ if(e.target.id==="logoModal") closeLogoPicker(); });
 
   wireTabs();
   renderTeamsAll();

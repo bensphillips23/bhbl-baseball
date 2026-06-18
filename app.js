@@ -1,4 +1,4 @@
-const APP_VERSION = "5.15.0";
+const APP_VERSION = "5.15.1";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -3788,12 +3788,22 @@ function franchiseData(team){
   const titles = hist.filter(h=>normName(h.champion)===key).map(h=>h.seasonNumber);
   const honors = { MVP:0, CY:0, BC:0, WSMVP:0, AS:0 };
   for(const h of hist){
-    for(const a of (h.allStars||[])) if(normName(a.team)===key) honors.AS++;
+    // Players on this franchise that season, from the trusted roster snapshot.
+    const teamEntry = (h.teams||[]).find(te=>normName(te.name)===key);
+    const members = new Set();
+    if(teamEntry){
+      for(const b of (teamEntry.batters||[]))  members.add(normName(b.name));
+      for(const p of (teamEntry.pitchers||[])) members.add(normName(p.name));
+    }
+    // Count an honor for the club if the player was on its roster OR the award's team string matches.
+    const onClub = (name, teamField)=>
+      (name && members.has(normName(name))) || (teamField && normName(teamField)===key);
+    for(const a of (h.allStars||[])) if(onClub(a.name, a.team)) honors.AS++;
     const aw=h.awards||{};
-    if(aw.MVP && normName(aw.MVP.team)===key) honors.MVP++;
-    if(aw.CY  && normName(aw.CY.team)===key)  honors.CY++;
-    if(aw.BC  && normName(aw.BC.team)===key)  honors.BC++;
-    if(aw.WSMVP && normName(aw.WSMVP.team)===key) honors.WSMVP++;
+    if(aw.MVP   && onClub(aw.MVP.name,   aw.MVP.team))   honors.MVP++;
+    if(aw.CY    && onClub(aw.CY.name,    aw.CY.team))    honors.CY++;
+    if(aw.BC    && onClub(aw.BC.name,    aw.BC.team))    honors.BC++;
+    if(aw.WSMVP && onClub(aw.WSMVP.name, aw.WSMVP.team)) honors.WSMVP++;
   }
   // franchise career leaders (stats accrued WITH this club only)
   const { batRows, pitRows } = collectAllSeasonRows();

@@ -6,7 +6,7 @@
   <title>BHBL Dice Baseball</title>
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#0b1020" />
-  <link rel="stylesheet" href="styles.css?v=5.14.1" />
+  <link rel="stylesheet" href="styles.css?v=5.15.0" />
   <style id="hofStyles">
     /* ---- Hall of Fame gallery ---- */
     #hof .hofGallery{
@@ -40,7 +40,7 @@
     #hof .cardHint{ color:#9aa3b2; font-size:13px; }
     #hof .cardBack{
       --team:#7a5230;
-      width:100%; max-width:560px; color:#241d10; border-radius:12px; overflow:hidden;
+      width:100%; max-width:600px; color:#241d10; border-radius:12px; overflow:hidden;
       background:#efe6cf;
       background-image:
         radial-gradient(circle at 18% 12%, rgba(255,255,255,.5), transparent 40%),
@@ -67,7 +67,7 @@
     }
     #hof .cardBio b{ color:#1c1607; }
     #hof .cardBio .bioHonors{ color:#7a5a14; font-weight:700; }
-    #hof .cardSec{ padding:10px 14px 4px; }
+    #hof .cardSec{ padding:10px 14px 4px; overflow-x:auto; }
     #hof .cardSecLabel{
       font-family:"Arial Narrow","Helvetica Neue",Arial,sans-serif;
       font-weight:800; text-transform:uppercase; letter-spacing:2px; font-size:12px;
@@ -81,11 +81,11 @@
     }
     #hof table.cardStats th{
       text-transform:uppercase; font-size:10px; letter-spacing:.3px; color:#6b5a2e;
-      text-align:right; padding:2px 5px; border-bottom:1.5px solid #b9a672;
+      text-align:right; padding:2px 4px; border-bottom:1.5px solid #b9a672;
     }
     #hof table.cardStats th:first-child, #hof table.cardStats td:first-child{ text-align:left; }
     #hof table.cardStats th:nth-child(2), #hof table.cardStats td:nth-child(2){ text-align:left; }
-    #hof table.cardStats td{ text-align:right; padding:3px 5px; border-bottom:1px solid #d8cba2; white-space:nowrap; }
+    #hof table.cardStats td{ text-align:right; padding:3px 4px; border-bottom:1px solid #d8cba2; white-space:nowrap; }
     #hof table.cardStats tr:nth-child(even) td{ background:rgba(150,120,60,.06); }
     #hof table.cardStats tr.totRow td{
       font-weight:800; color:#1c1607; border-top:2px solid #7a6a38; border-bottom:none;
@@ -117,6 +117,38 @@
     .logoChip.selLogo{ border-color:#22c55e; box-shadow:0 0 0 2px rgba(34,197,94,.35); }
     .logoChip img{ width:72px; height:72px; object-fit:contain; background:#fff; border-radius:8px; }
     .logoChip span{ font-size:11px; text-align:center; line-height:1.15; }
+
+    /* ---- League-leader crowns ---- */
+    #hof .led{ color:#b07a14; font-size:.72em; margin-left:1px; vertical-align:top; }
+    #hof .cardFoot .ledFoot{ color:#b07a14; font-weight:700; }
+
+    /* ---- Franchise pages ---- */
+    #franchises .frHero{
+      --tc:#3b82f6; display:flex; align-items:center; gap:18px; padding:18px 20px; border-radius:14px; color:#fff;
+      background:linear-gradient(135deg, var(--tc), #0b1229 78%);
+      box-shadow:inset 0 0 0 1px rgba(255,255,255,.08), 0 8px 22px rgba(0,0,0,.4);
+    }
+    #franchises .frLogo{ width:84px; height:84px; border-radius:12px; object-fit:cover; background:#fff; flex:0 0 auto; box-shadow:0 0 0 3px rgba(255,255,255,.85), 0 2px 6px rgba(0,0,0,.4); }
+    #franchises .frLogoEmpty{ display:flex; align-items:center; justify-content:center; font-weight:800; font-size:26px; letter-spacing:1px; color:#fff; box-shadow:0 0 0 2px rgba(255,255,255,.4); }
+    #franchises .frHeroMain{ min-width:0; }
+    #franchises .frName{ font-size:30px; font-weight:800; line-height:1.05; letter-spacing:.3px; text-shadow:0 1px 0 rgba(0,0,0,.35); }
+    #franchises .frSub{ font-size:13px; opacity:.92; margin-top:2px; }
+    #franchises .frStatline{ display:flex; flex-wrap:wrap; gap:6px 18px; margin-top:8px; font-size:14px; }
+    #franchises .frStatline b{ font-size:16px; }
+    #franchises .frRings{ display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+    #franchises .frRing{ background:rgba(0,0,0,.28); border:1px solid rgba(255,255,255,.25); border-radius:999px; font-size:12px; padding:2px 9px; }
+    #franchises .frNoTitle{ font-size:12px; opacity:.8; }
+    #franchises .frLeadGrid{ display:grid; gap:14px; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); }
+    #franchises .frLeadTitle{ font-size:12px; text-transform:uppercase; letter-spacing:.6px; color:#94a3b8; margin-bottom:6px; }
+    #franchises .frLeadRow{ display:flex; align-items:center; gap:8px; padding:3px 0; border-bottom:1px solid #1b2436; }
+    #franchises .frLeadRank{ width:18px; color:#64748b; font-size:12px; text-align:right; }
+    #franchises .frLeadVal{ margin-left:auto; font-weight:700; font-variant-numeric:tabular-nums; }
+    #franchises .linkPlayer{ background:none; border:none; color:#7cc0ff; cursor:pointer; padding:0; font-size:14px; text-align:left; }
+    #franchises .linkPlayer:hover{ text-decoration:underline; }
+    @media (max-width:560px){
+      #franchises .frHero{ flex-direction:column; text-align:center; }
+      #franchises .frStatline, #franchises .frRings{ justify-content:center; }
+    }
   </style>
 </head>
 <body>
@@ -135,6 +167,7 @@
       <button class="tab" data-tab="stats">Stats</button>
       <button class="tab" data-tab="pitching">Pitching</button>
       <button class="tab" data-tab="records">Records</button>
+      <button class="tab" data-tab="franchises">Franchises</button>
       <button class="tab" data-tab="hof">Hall of Fame</button>
       <button class="tab" data-tab="history">History</button>
       <button class="tab" data-tab="backup">Backup</button>
@@ -604,6 +637,17 @@
       </div>
     </section>
 
+    <section class="panel" id="franchises">
+      <div class="card">
+        <div class="row" style="align-items:center">
+          <h2 style="margin:0">Franchises</h2>
+          <select id="franchiseTeam"></select>
+        </div>
+        <div class="hint">All-time record, titles, season-by-season finishes, franchise leaders, and the current roster. Click a leader's name to open his player card.</div>
+      </div>
+      <div id="franchisePage"></div>
+    </section>
+
     <section class="panel" id="history">
       <div class="card">
         <h2>Franchise History</h2>
@@ -719,8 +763,8 @@
   </div>
 
 
-  <script src="logos.js?v=5.14.1"></script>
-  <script src="app.js?v=5.14.1"></script>
+  <script src="logos.js?v=5.15.0"></script>
+  <script src="app.js?v=5.15.0"></script>
 
   <div class="modal" id="playerEditModal" aria-hidden="true">
     <div class="modalCard">

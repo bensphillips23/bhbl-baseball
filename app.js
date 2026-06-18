@@ -1,4 +1,4 @@
-const APP_VERSION = "5.14.1";
+const APP_VERSION = "5.15.0";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -3394,6 +3394,73 @@ function _sumLine(rows, keys){
 }
 
 // Assemble all the data one card needs.
+
+/* ---- League-leader crowns (per season) ---- */
+const CROWN_BAT = ["R","H","2B","3B","HR","RBI","BB","AVG","OBP","SLG","OPS"];
+const CROWN_PIT = ["W","SV","SO","IP","ERA","WHIP"];
+const _CROWN_EPS = 1e-9;
+
+function _batStatVal(l, cat){
+  if(["R","H","2B","3B","HR","RBI","BB"].includes(cat)) return num(l[cat]);
+  if(["AVG","OBP","SLG","OPS"].includes(cat)){
+    if(num(l.AB) < REC_MIN_AB) return null;          // rate-stat qualifier
+    return _batDerived(l)[cat.toLowerCase()];
+  }
+  return null;
+}
+function _pitStatVal(l, cat){
+  if(cat==="W"||cat==="SV"||cat==="SO") return num(l[cat]);
+  if(cat==="IP") return num(l.OUTS);                 // compare by outs
+  if(cat==="ERA"||cat==="WHIP"){
+    if(num(l.OUTS) < REC_MIN_OUTS) return null;       // rate-stat qualifier
+    return _pitDerived(l)[cat.toLowerCase()];
+  }
+  return null;
+}
+// { [season]: { bat:{cat:max}, pit:{cat:{val,low}} } } across history + live.
+function seasonLeaders(){
+  const { batRows, pitRows } = collectAllSeasonRows();
+  const out = {};
+  const ens = s => (out[s] = out[s] || { bat:{}, pit:{} });
+  const bySeasonBat = {}, bySeasonPit = {};
+  for(const r of batRows){ (bySeasonBat[r.season]=bySeasonBat[r.season]||[]).push(r); }
+  for(const r of pitRows){ (bySeasonPit[r.season]=bySeasonPit[r.season]||[]).push(r); }
+  for(const s in bySeasonBat){
+    const L = ens(s).bat;
+    for(const cat of CROWN_BAT){
+      let best=-Infinity;
+      for(const r of bySeasonBat[s]){ const v=_batStatVal(r.line,cat); if(v==null) continue; if(v>best) best=v; }
+      if(best>-Infinity && best>0) L[cat]=best;        // leading with 0 isn't a crown
+    }
+  }
+  for(const s in bySeasonPit){
+    const L = ens(s).pit;
+    for(const cat of CROWN_PIT){
+      const low = (cat==="ERA"||cat==="WHIP");
+      let best = low ? Infinity : -Infinity, found=false;
+      for(const r of bySeasonPit[s]){ const v=_pitStatVal(r.line,cat); if(v==null) continue; found=true; if(low ? v<best : v>best) best=v; }
+      if(!found) continue;
+      if(!low && !(best>0)) continue;
+      L[cat] = { val:best, low };
+    }
+  }
+  return out;
+}
+function _crownBat(leaders, season, cat, line){
+  const L = leaders?.[season]?.bat?.[cat];
+  if(L==null) return "";
+  const v=_batStatVal(line,cat);
+  if(v==null) return "";
+  return Math.abs(v-L)<=_CROWN_EPS ? `<span class="led" title="Led the league this season">♔</span>` : "";
+}
+function _crownPit(leaders, season, cat, line){
+  const L = leaders?.[season]?.pit?.[cat];
+  if(!L) return "";
+  const v=_pitStatVal(line,cat);
+  if(v==null) return "";
+  return Math.abs(v-L.val)<=_CROWN_EPS ? `<span class="led" title="Led the league this season">♔</span>` : "";
+}
+
 function playerCardData(name){
   const key = normName(name);
   const { batRows, pitRows } = collectAllSeasonRows();
@@ -3431,6 +3498,9 @@ function renderPlayerCard(name){
   const teamColor = team?.color || "#7a5230";
   const inHof = ensureHOF().some(x=>x.key===d.key);
   const anyCurrent = [...d.bat, ...d.pit].some(r=>r.current);
+  const leaders = seasonLeaders();
+  const hasCrown = d.bat.some(r=>CROWN_BAT.some(c=>_crownBat(leaders,r.season,c,r.line)))
+                || d.pit.some(r=>CROWN_PIT.some(c=>_crownPit(leaders,r.season,c,r.line)));
 
   if(btn){
     btn.style.display = "";
@@ -3464,11 +3534,14 @@ function renderPlayerCard(name){
   if(d.bat.length){
     const head = ["Yr","Tm","AB","R","H","2B","3B","HR","RBI","BB","SO","AVG","OBP","SLG","OPS"];
     const body = d.bat.map(r=>{
-      const l=r.line, dd=_batDerived(l), cur=r.current;
-      const counts=[num(l.AB),num(l.R),num(l.H),num(l["2B"]),num(l["3B"]),num(l.HR),num(l.RBI),num(l.BB),num(l.SO)];
+      const l=r.line, dd=_batDerived(l), cur=r.current, s=r.season;
+      const cBat = (cat,v)=>`<td>${v}${_crownBat(leaders,s,cat,l)}</td>`;
       return `<tr><td class="${cur?'cur':''}">S${r.season}${cur?'*':''}</td><td>${esc(r.team)}</td>`
-        + counts.map(v=>`<td>${v}</td>`).join("")
-        + `<td>${_f3(dd.avg)}</td><td>${_f3(dd.obp)}</td><td>${_f3(dd.slg)}</td><td>${_f3(dd.ops)}</td></tr>`;
+        + `<td>${num(l.AB)}</td>`
+        + cBat("R",num(l.R)) + cBat("H",num(l.H)) + cBat("2B",num(l["2B"])) + cBat("3B",num(l["3B"]))
+        + cBat("HR",num(l.HR)) + cBat("RBI",num(l.RBI)) + cBat("BB",num(l.BB)) + `<td>${num(l.SO)}</td>`
+        + cBat("AVG",_f3(dd.avg)) + cBat("OBP",_f3(dd.obp)) + cBat("SLG",_f3(dd.slg)) + cBat("OPS",_f3(dd.ops))
+        + `</tr>`;
     }).join("");
     const bt = _sumLine(d.bat, ["AB","R","H","2B","3B","HR","RBI","BB","SO","SF"]);
     const der = _batDerived(bt);
@@ -3483,10 +3556,15 @@ function renderPlayerCard(name){
   if(d.pit.length){
     const head = ["Yr","Tm","W","L","ERA","GP","SV","IP","H","R","ER","SO","BB","WHIP"];
     const body = d.pit.map(r=>{
-      const l=r.line, dd=_pitDerived(l), cur=r.current;
+      const l=r.line, dd=_pitDerived(l), cur=r.current, s=r.season;
       return `<tr><td class="${cur?'cur':''}">S${r.season}${cur?'*':''}</td><td>${esc(r.team)}</td>`
-        + `<td>${num(l.W)}</td><td>${num(l.L)}</td><td>${_f2(dd.era)}</td><td>${num(l.GP)}</td><td>${num(l.SV)}</td>`
-        + `<td>${outsToIP(num(l.OUTS))}</td><td>${num(l.H)}</td><td>${num(l.R)}</td><td>${dd.er}</td><td>${num(l.SO)}</td><td>${num(l.BB)}</td><td>${_f2(dd.whip)}</td></tr>`;
+        + `<td>${num(l.W)}${_crownPit(leaders,s,"W",l)}</td><td>${num(l.L)}</td>`
+        + `<td>${_f2(dd.era)}${_crownPit(leaders,s,"ERA",l)}</td><td>${num(l.GP)}</td>`
+        + `<td>${num(l.SV)}${_crownPit(leaders,s,"SV",l)}</td>`
+        + `<td>${outsToIP(num(l.OUTS))}${_crownPit(leaders,s,"IP",l)}</td>`
+        + `<td>${num(l.H)}</td><td>${num(l.R)}</td><td>${dd.er}</td>`
+        + `<td>${num(l.SO)}${_crownPit(leaders,s,"SO",l)}</td><td>${num(l.BB)}</td>`
+        + `<td>${_f2(dd.whip)}${_crownPit(leaders,s,"WHIP",l)}</td></tr>`;
     }).join("");
     const pt = _sumLine(d.pit, ["GP","OUTS","H","R","HR","BB","SO","W","L","SV"]);
     let totER=0; for(const r of d.pit) totER+=getER(r.line);
@@ -3499,7 +3577,7 @@ function renderPlayerCard(name){
       + `<table class="cardStats"><thead><tr>${head.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${body}${tot}</tbody></table></div>`;
   }
 
-  html += `<div class="cardFoot"><span>BHBL Dice Baseball</span>`
+  html += `<div class="cardFoot"><span>${hasCrown?`<span class="ledFoot">♔</span> led league`:`BHBL Dice Baseball`}</span>`
     + `${anyCurrent?`<span class="cardCur">* current season, in progress</span>`:`<span></span>`}</div></div>`;
   wrap.innerHTML = html;
 }
@@ -3671,6 +3749,135 @@ function handleLogoUpload(file){
   reader.readAsDataURL(file);
 }
 
+/* ============================ Franchise Pages ============================ */
+
+function ordinal(n){ n=Number(n)||0; const s=["th","st","nd","rd"], v=n%100; return n+(s[(v-20)%10]||s[v]||s[0]); }
+
+function _curStandingsRow(team){
+  const all = computeStandingsForTeamIds(state.teams.map(t=>t.id));
+  const me = all.find(r=>r.teamId===team.id);
+  if(!me) return null;
+  const divTeams = state.teams.filter(t=>t.divisionId===team.divisionId);
+  const divStand = computeStandingsForTeamIds(divTeams.map(t=>t.id));
+  const place = divStand.findIndex(r=>r.teamId===team.id)+1;
+  const divName = (state.season.structure?.divisions||[]).find(d=>d.id===team.divisionId)?.name || "";
+  return { season: state.franchise?.seasonNumber||1, division:divName,
+           W:me.W, L:me.L, pct:(me.WPct||0).toFixed(3).replace(/^0/,""),
+           place, of:divStand.length, champ:false, current:true };
+}
+
+function franchiseData(team){
+  const key = normName(team.name);
+  const hist = (state.franchise?.history||[]).slice().sort((a,b)=>(a.seasonNumber||0)-(b.seasonNumber||0));
+  const seasons = [];
+  let totW=0, totL=0;
+  for(const h of hist){
+    const row = (h.standings||[]).find(r=>normName(r.name)===key);
+    const champ = normName(h.champion)===key;
+    if(row){
+      const W=num(row.W), L=num(row.L); totW+=W; totL+=L;
+      const divRows = (h.standings||[]).filter(r=>r.division===row.division)
+        .slice().sort((a,b)=>(parseFloat(b.Pct)||0)-(parseFloat(a.Pct)||0) || num(b.W)-num(a.W));
+      const place = divRows.findIndex(r=>normName(r.name)===key)+1;
+      seasons.push({ season:h.seasonNumber, division:row.division, W, L, pct:row.Pct||"", place, of:divRows.length, champ });
+    }
+  }
+  const cur = _curStandingsRow(team);
+  if(cur && (cur.W||cur.L)){ totW+=cur.W; totL+=cur.L; seasons.push(cur); }
+
+  const titles = hist.filter(h=>normName(h.champion)===key).map(h=>h.seasonNumber);
+  const honors = { MVP:0, CY:0, BC:0, WSMVP:0, AS:0 };
+  for(const h of hist){
+    for(const a of (h.allStars||[])) if(normName(a.team)===key) honors.AS++;
+    const aw=h.awards||{};
+    if(aw.MVP && normName(aw.MVP.team)===key) honors.MVP++;
+    if(aw.CY  && normName(aw.CY.team)===key)  honors.CY++;
+    if(aw.BC  && normName(aw.BC.team)===key)  honors.BC++;
+    if(aw.WSMVP && normName(aw.WSMVP.team)===key) honors.WSMVP++;
+  }
+  // franchise career leaders (stats accrued WITH this club only)
+  const { batRows, pitRows } = collectAllSeasonRows();
+  const bAgg = new Map(), pAgg = new Map();
+  for(const r of batRows){ if(normName(r.team)!==key) continue;
+    const k=normName(r.name); if(!bAgg.has(k)) bAgg.set(k,{name:r.name,key:k,HR:0,H:0});
+    const c=bAgg.get(k); c.HR+=num(r.line.HR); c.H+=num(r.line.H);
+  }
+  for(const r of pitRows){ if(normName(r.team)!==key) continue;
+    const k=normName(r.name); if(!pAgg.has(k)) pAgg.set(k,{name:r.name,key:k,W:0,SO:0});
+    const c=pAgg.get(k); c.W+=num(r.line.W); c.SO+=num(r.line.SO);
+  }
+  const topBy=(map,field,n=5)=>[...map.values()].filter(x=>x[field]>0).sort((a,b)=>b[field]-a[field]).slice(0,n);
+  const leaders = { HR:topBy(bAgg,"HR"), H:topBy(bAgg,"H"), W:topBy(pAgg,"W"), SO:topBy(pAgg,"SO") };
+  return { seasons, totW, totL, titles, honors, leaders };
+}
+
+function renderFranchises(){
+  const sel = el("franchiseTeam");
+  if(sel){
+    const prev = sel.value;
+    sel.innerHTML = state.teams.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join("");
+    if(prev && state.teams.some(t=>t.id===prev)) sel.value=prev;
+  }
+  const wrap = el("franchisePage");
+  if(!wrap) return;
+  const team = getTeam(sel?.value) || state.teams[0];
+  if(!team){ wrap.innerHTML = `<div class="small">Add a team in the League tab to see its franchise page.</div>`; return; }
+  ensureTeamStyle(team);
+  const d = franchiseData(team);
+  const color = team.color || "#3b82f6";
+  const divName = (state.season.structure?.divisions||[]).find(x=>x.id===team.divisionId)?.name || "—";
+  const allPct = (d.totW+d.totL) ? (d.totW/(d.totW+d.totL)).toFixed(3).replace(/^0/,"") : "—";
+  const logo = team.logo
+    ? `<img class="frLogo" src="${team.logo}" alt=""/>`
+    : `<span class="frLogo frLogoEmpty" style="background:${esc(color)}">${esc(team.abbr||makeAbbr(team.name))}</span>`;
+  const titleBadges = d.titles.length
+    ? d.titles.map(s=>`<span class="frRing" title="Season ${s} champion">🏆 S${s}</span>`).join("")
+    : `<span class="frNoTitle">No titles yet</span>`;
+
+  let html = `<div class="frHero" style="--tc:${esc(color)}">
+    ${logo}
+    <div class="frHeroMain">
+      <div class="frName">${esc(team.name)}</div>
+      <div class="frSub">${esc(divName)} Division${team.abbr?` · ${esc(team.abbr)}`:""}</div>
+      <div class="frStatline"><span><b>${d.totW}-${d.totL}</b> all-time (${allPct})</span><span><b>${d.titles.length}</b> championship${d.titles.length===1?"":"s"}</span></div>
+      <div class="frRings">${titleBadges}</div>
+    </div>
+  </div>`;
+
+  const seasonRows = d.seasons.slice().sort((a,b)=>(a.season-b.season)).map(s=>{
+    const finish = s.of ? `${ordinal(s.place)} of ${s.of}` : "—";
+    const result = s.champ ? `🏆 Champions` : (s.current ? `<span class="small">in progress</span>` : `—`);
+    return [`S${s.season}${s.current?'*':''}`, esc(s.division||"—"), finish, s.W, s.L, s.pct||"—", result];
+  });
+  html += `<div class="card" style="margin-top:12px"><h3 class="h3">Season by Season</h3>`
+    + (seasonRows.length ? _histTable(["Season","Division","Finish","W","L","Pct","Result"], seasonRows) : `<div class="small">No completed seasons yet.</div>`)
+    + `</div>`;
+
+  const H=d.honors;
+  const honorsLine = [H.MVP?`${H.MVP}× MVP`:"", H.CY?`${H.CY}× Cy Young`:"", H.BC?`${H.BC}× Batting Champ`:"", H.WSMVP?`${H.WSMVP}× WS MVP`:"", H.AS?`${H.AS}× All-Star`:""].filter(Boolean).join(" · ") || "None recorded yet";
+  html += `<div class="card" style="margin-top:12px"><h3 class="h3">Franchise Honors</h3><div class="pill">${esc(honorsLine)}</div></div>`;
+
+  const leadCol = (title, arr, field)=>{
+    if(!arr.length) return `<div class="frLeadCol"><div class="frLeadTitle">${title}</div><div class="small">—</div></div>`;
+    const items = arr.map((x,i)=>`<div class="frLeadRow"><span class="frLeadRank">${i+1}</span><button class="linkPlayer" data-key="${esc(x.key)}">${esc(x.name)}</button><span class="frLeadVal">${x[field]}</span></div>`).join("");
+    return `<div class="frLeadCol"><div class="frLeadTitle">${title}</div>${items}</div>`;
+  };
+  html += `<div class="card" style="margin-top:12px"><h3 class="h3">Franchise Leaders <span class="small">(with this club)</span></h3>
+    <div class="frLeadGrid">${leadCol("Home Runs",d.leaders.HR,"HR")}${leadCol("Hits",d.leaders.H,"H")}${leadCol("Wins",d.leaders.W,"W")}${leadCol("Strikeouts",d.leaders.SO,"SO")}</div></div>`;
+
+  const bat = (team.roster||[]).map(p=>[esc(p.name), esc(p.pos||""), esc(tierLabel(p.tier)), esc(hrLabel(p.hr))]);
+  const pit = (team.pitchers||[]).map(p=>[esc(p.name), esc(p.role||"")]);
+  html += `<div class="grid2" style="margin-top:12px">
+    <div class="card"><h3 class="h3">Current Batters (${bat.length})</h3>${_histTable(["Player","Pos","BA Tier","HR"], bat)}</div>
+    <div class="card"><h3 class="h3">Current Pitchers (${pit.length})</h3>${_histTable(["Pitcher","Role"], pit)}</div>
+  </div>`;
+
+  wrap.innerHTML = html;
+  wrap.querySelectorAll(".linkPlayer").forEach(btn=>{
+    btn.addEventListener("click", ()=>{ showTab("hof"); openPlayerCard(btn.dataset.key); });
+  });
+}
+
 function showTab(tab){
   document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active", b.dataset.tab===tab));
   document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("active", p.id===tab));
@@ -3684,6 +3891,7 @@ function showTab(tab){
   if(tab==="history") renderHistory();
   if(tab==="records") renderRecords();
   if(tab==="hof") renderHallOfFame();
+  if(tab==="franchises") renderFranchises();
 }
 function wireTabs(){ document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click", ()=>showTab(btn.dataset.tab))); }
 
@@ -4178,6 +4386,8 @@ function init(){
 
   // Hall of Fame / Player Card
   if(el("cardSelect")) el("cardSelect").onchange = (e)=>renderPlayerCard(e.target.value);
+  // Franchise pages
+  if(el("franchiseTeam")) el("franchiseTeam").onchange = renderFranchises;
   if(el("hofAddBtn")) el("hofAddBtn").onclick = ()=>{
     const key = el("hofAddSelect")?.value;
     inductPlayer(key, { season: el("hofAddSeason")?.value, note: el("hofAddNote")?.value });
@@ -4193,8 +4403,7 @@ function init(){
   };
 
   // Team logo picker
-  if(el("logoCloseBtn")) el("logoCloseBtn").onclick = closeLogoPicker;
-  if(el("logoRemoveBtn")) el("logoRemoveBtn").onclick = ()=>setTeamLogo(null);
+  if(el("logoCloseBtn")) el("logoCloseBtn").onclick = closeLogoPicker;  if(el("logoRemoveBtn")) el("logoRemoveBtn").onclick = ()=>setTeamLogo(null);
   if(el("logoUploadInput")) el("logoUploadInput").onchange = (e)=>{
     const f = e.target.files && e.target.files[0];
     handleLogoUpload(f);

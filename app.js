@@ -1,4 +1,4 @@
-const APP_VERSION = "5.14.0";
+const APP_VERSION = "5.14.1";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -3614,11 +3614,12 @@ function openLogoPicker(teamId){
   if(el("logoModalTeam")) el("logoModalTeam").textContent = t ? t.name : "Team";
   if(el("logoRemoveBtn")) el("logoRemoveBtn").style.display = (t && t.logo) ? "" : "none";
   renderLogoPresets();
+  modal.classList.add("show");
   modal.setAttribute("aria-hidden","false");
 }
 function closeLogoPicker(){
   const modal = el("logoModal");
-  if(modal) modal.setAttribute("aria-hidden","true");
+  if(modal){ modal.classList.remove("show"); modal.setAttribute("aria-hidden","true"); }
   _logoTargetTeamId = null;
 }
 function renderLogoPresets(){

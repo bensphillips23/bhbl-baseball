@@ -1,4 +1,4 @@
-const APP_VERSION = "5.15.1";
+const APP_VERSION = "5.16.0";
 // BHBL Dice Baseball — v2 (Lineups + Schedule)
 const STORAGE_KEY = "bhbl_pwa_v2";
 
@@ -3115,9 +3115,14 @@ function topSeasonList(rows, valueFn, opts={}){
   }));
 }
 
+function teamAbbrFor(name){
+  const t = getTeamByName(name);
+  if(t && t.abbr) return t.abbr;
+  return makeAbbr(name||"");
+}
 function _recListHtml(title, entries){
   const body = entries.length
-    ? entries.map((e,i)=>`<tr><td>${i+1}</td><td>${e.name}</td><td class="small">${e.team}, S${e.season}${e.current?"*":""}</td><td><b>${e.val}</b></td></tr>`).join("")
+    ? entries.map((e,i)=>`<tr><td>${i+1}</td><td>${e.name}</td><td class="small" title="${esc(e.team||"")}">${esc(teamAbbrFor(e.team))}, S${e.season}${e.current?"*":""}</td><td><b>${e.val}</b></td></tr>`).join("")
     : `<tr><td colspan="4" class="small">No data</td></tr>`;
   return `<div class="card" style="background:#0b1229"><h3 style="margin-top:0">${title}</h3><table><tbody>${body}</tbody></table></div>`;
 }
@@ -3888,6 +3893,89 @@ function renderFranchises(){
   });
 }
 
+/* ------------------------- Player name corrections ------------------------- */
+function _renameInList(list, fromKey, toName){
+  let n=0;
+  for(const p of (list||[])) if(p && normName(p.name)===fromKey){ p.name=toName; n++; }
+  return n;
+}
+function countNameOccurrences(name){
+  const key=normName(name); if(!key) return 0;
+  let c=0;
+  for(const t of state.teams){
+    for(const p of (t.roster||[]))   if(normName(p.name)===key) c++;
+    for(const p of (t.pitchers||[])) if(normName(p.name)===key) c++;
+  }
+  for(const h of (state.franchise?.history||[])){
+    for(const te of (h.teams||[])){
+      for(const p of (te.batters||[]))  if(normName(p.name)===key) c++;
+      for(const p of (te.pitchers||[])) if(normName(p.name)===key) c++;
+    }
+    for(const a of (h.allStars||[])) if(normName(a.name)===key) c++;
+    const aw=h.awards||{};
+    for(const code of ["MVP","CY","BC","WSMVP"]) if(aw[code] && normName(aw[code].name)===key) c++;
+  }
+  for(const m of (state.hallOfFame||[])) if(normName(m.name)===key) c++;
+  return c;
+}
+function mergePlayerName(fromName, toName){
+  fromName=String(fromName||"").trim(); toName=String(toName||"").trim();
+  const fromKey=normName(fromName);
+  if(!fromKey || !toName) return 0;
+  let count=0;
+  for(const t of state.teams){
+    count += _renameInList(t.roster, fromKey, toName);
+    count += _renameInList(t.pitchers, fromKey, toName);
+  }
+  for(const h of (state.franchise?.history||[])){
+    for(const te of (h.teams||[])){
+      count += _renameInList(te.batters, fromKey, toName);
+      count += _renameInList(te.pitchers, fromKey, toName);
+    }
+    count += _renameInList(h.allStars, fromKey, toName);
+    const aw=h.awards||{};
+    for(const code of ["MVP","CY","BC","WSMVP"]){
+      if(aw[code] && normName(aw[code].name)===fromKey){ aw[code].name=toName; count++; }
+    }
+  }
+  for(const m of (state.hallOfFame||[])){
+    if(normName(m.name)===fromKey){ m.name=toName; m.key=normName(toName); count++; }
+  }
+  return count;
+}
+function renderNameFixTool(){
+  const sel=el("nameFixSelect");
+  if(!sel) return;
+  const prev=sel.value;
+  const players=allKnownPlayers();
+  sel.innerHTML = players.length
+    ? players.map(p=>`<option value="${esc(p.name)}">${esc(p.name)}</option>`).join("")
+    : `<option value="">(no players yet)</option>`;
+  if(prev && players.some(p=>p.name===prev)) sel.value=prev;
+}
+function applyNameFix(){
+  const from = el("nameFixSelect")?.value || "";
+  const to   = (el("nameFixInput")?.value || "").trim();
+  const res  = el("nameFixResult");
+  const done = (msg)=>{ if(res) res.textContent = msg; };
+  if(!from){ done("Pick a player to correct."); return; }
+  if(!to){ done("Type the correct spelling first."); return; }
+  if(normName(from)===normName(to) && from===to){ done("That's already the correct spelling."); return; }
+  const n = countNameOccurrences(from);
+  const mergingInto = allKnownPlayers().some(p=>normName(p.name)===normName(to) && normName(to)!==normName(from));
+  const verb = mergingInto ? `merge “${from}” into existing “${to}”` : `rename “${from}” to “${to}”`;
+  if(!confirm(`This will ${verb} across ${n} record${n===1?"":"s"} (rosters, seasons, awards, Hall of Fame). This can't be undone. Continue?`)) return;
+  const changed = mergePlayerName(from, to);
+  saveState();
+  renderNameFixTool();
+  if(el("nameFixInput")) el("nameFixInput").value = "";
+  try { renderLeague(); } catch(e){}
+  try { renderRecords(); } catch(e){}
+  if(el("hof") && el("hof").classList.contains("active")) renderHallOfFame();
+  if(el("franchises") && el("franchises").classList.contains("active")) renderFranchises();
+  done(`Updated ${changed} record${changed===1?"":"s"}. “${to}” is now used everywhere.`);
+}
+
 function showTab(tab){
   document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active", b.dataset.tab===tab));
   document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("active", p.id===tab));
@@ -3902,6 +3990,7 @@ function showTab(tab){
   if(tab==="records") renderRecords();
   if(tab==="hof") renderHallOfFame();
   if(tab==="franchises") renderFranchises();
+  if(tab==="backup") renderNameFixTool();
 }
 function wireTabs(){ document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click", ()=>showTab(btn.dataset.tab))); }
 
@@ -4398,6 +4487,9 @@ function init(){
   if(el("cardSelect")) el("cardSelect").onchange = (e)=>renderPlayerCard(e.target.value);
   // Franchise pages
   if(el("franchiseTeam")) el("franchiseTeam").onchange = renderFranchises;
+  // Player name corrections
+  if(el("nameFixSelect")) el("nameFixSelect").onchange = (e)=>{ if(el("nameFixInput")) el("nameFixInput").value = e.target.value; };
+  if(el("nameFixApply")) el("nameFixApply").onclick = applyNameFix;
   if(el("hofAddBtn")) el("hofAddBtn").onclick = ()=>{
     const key = el("hofAddSelect")?.value;
     inductPlayer(key, { season: el("hofAddSeason")?.value, note: el("hofAddNote")?.value });

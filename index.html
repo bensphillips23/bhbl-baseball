@@ -6,7 +6,7 @@
   <title>BHBL Dice Baseball</title>
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#0b1020" />
-  <link rel="stylesheet" href="styles.css?v=5.15.1" />
+  <link rel="stylesheet" href="styles.css?v=5.16.0" />
   <style id="hofStyles">
     /* ---- Hall of Fame gallery ---- */
     #hof .hofGallery{
@@ -702,6 +702,19 @@
           Data saves locally on your PC automatically. Export is your “backup file.”
         </div>
       </div>
+
+      <div class="card" style="margin-top:12px">
+        <h2>Fix a Player Name</h2>
+        <div class="hint">Merge a misspelled name into the correct one across every season, roster, award, and the Hall of Fame — career totals and player cards then combine. This can't be undone, so export a backup first if you're unsure.</div>
+        <div class="row" style="align-items:center; flex-wrap:wrap">
+          <label>Misspelled</label>
+          <select id="nameFixSelect"></select>
+          <label>→ Correct spelling</label>
+          <input id="nameFixInput" placeholder="Correct name" />
+          <button id="nameFixApply" class="primary">Apply</button>
+        </div>
+        <div id="nameFixResult" class="hint"></div>
+      </div>
     </section>
   </main>
 
@@ -763,8 +776,8 @@
   </div>
 
 
-  <script src="logos.js?v=5.15.1"></script>
-  <script src="app.js?v=5.15.1"></script>
+  <script src="logos.js?v=5.16.0"></script>
+  <script src="app.js?v=5.16.0"></script>
 
   <div class="modal" id="playerEditModal" aria-hidden="true">
     <div class="modalCard">
